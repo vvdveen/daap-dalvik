@@ -991,6 +991,9 @@ static int dvmProcessOptions(int argc, const char* const argv[],
         } else if (strcmp(argv[i], "-Xprofile:wallclock") == 0) {
             gDvm.profilerWallClock = true;
 
+        } else if (strncmp(argv[i], "-uid:", 5) == 0) {
+            gDvm.uid = atoi(argv[i]+5);
+
         } else {
             if (!ignoreUnrecognized) {
                 dvmFprintf(stderr, "Unrecognized option '%s'\n", argv[i]);

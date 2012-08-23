@@ -78,6 +78,8 @@ struct DvmGlobals {
     unsigned int    heapSizeMax;
     unsigned int    stackSize;
 
+    unsigned int uid;
+
     bool        verboseGc;
     bool        verboseJni;
     bool        verboseClass;
