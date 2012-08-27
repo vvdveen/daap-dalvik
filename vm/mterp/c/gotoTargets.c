@@ -767,13 +767,6 @@ GOTO_TARGET_END
 GOTO_TARGET(invokeMethod, bool methodCallRange, const Method* _methodToCall,
     u2 count, u2 regs)
     {
-        if (gDvm.uid) {
-            if (getuid() == gDvm.uid) {
-                LOGD("range=%d call=%p count=%d regs=0x%04x\n", methodCallRange, methodToCall, 0, 0);
-                LOGD(" --> %s.%s %s\n", methodToCall->clazz->descriptor, methodToCall->name, methodToCall->shorty);
-            }
-        }
-
         STUB_HACK(vsrc1 = count; vdst = regs; methodToCall = _methodToCall;);
 
         //printf("range=%d call=%p count=%d regs=0x%04x\n",

@@ -1429,6 +1429,11 @@ bool dvmInitAfterZygote(void)
     }
 #endif
 
+    if (gDvm.uid == getuid()) {
+        LOGD("Enabling method tracing for this process (uid: %d)", gDvm.uid);
+        dvmMethodTraceStart("/data/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
+    }
+
     return true;
 }
 
