@@ -29,6 +29,10 @@
  */
 #define PROFILE_EXTERNAL_ALLOCATIONS 1
 
+/* A different log tag for trace output so that we can filter it */
+#define TRACE_LOG_TAG      LOG_TAG "-trace"
+#define LOGD_TRACE(...)    LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__)
+
 struct Thread;      // extern
 
 
@@ -47,6 +51,8 @@ typedef struct MethodTraceState {
 
     /* active state */
     pthread_mutex_t startStopLock;
+    pthread_mutex_t addLock;
+    pthread_cond_t  lockExitCond;
     pthread_cond_t  threadExitCond;
     FILE*   traceFile;
     bool    directToDdms;
@@ -127,20 +133,20 @@ enum {
 /*
  * Call these when a method enters or exits.
  */
-#define TRACE_METHOD_ENTER(_self, _method)                                 \
+#define TRACE_METHOD_ENTER(_self, _method)                                  \
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_ENTER);      \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_ENTER, NULL); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_ENTER);          \
         }                                                                   \
     } while(0);
-#define TRACE_METHOD_EXIT(_self, _method)                                  \
+#define TRACE_METHOD_EXIT(_self, _method, _retval)                          \
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_EXIT);       \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_EXIT, _retval); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_EXIT);           \
         }                                                                   \
@@ -149,13 +155,13 @@ enum {
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL);     \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL, NULL); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_UNROLL);         \
         }                                                                   \
     } while(0);
 
-void dvmMethodTraceAdd(struct Thread* self, const Method* method, int action);
+void dvmMethodTraceAdd(struct Thread* self, const Method* method, int action, JValue* retval);
 void dvmEmitEmulatorTrace(const Method* method, int action);
 
 void dvmMethodTraceGCBegin(void);

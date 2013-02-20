@@ -705,6 +705,9 @@ INLINE bool dvmIsAbstractMethod(const Method* method) {
 INLINE bool dvmIsMirandaMethod(const Method* method) {
     return (method->accessFlags & ACC_MIRANDA) != 0;
 }
+INLINE bool dvmIsProtectedMethod(const Method* method) {
+    return (method->accessFlags & ACC_PROTECTED) != 0;
+}
 INLINE bool dvmIsConstructorMethod(const Method* method) {
     return *method->name == '<';
 }

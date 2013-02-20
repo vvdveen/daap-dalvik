@@ -30,6 +30,8 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <grp.h>
+
 #define kMinHeapStartSize   (1*1024*1024)
 #define kMinHeapSize        (2*1024*1024)
 #define kMaxHeapSize        (1*1024*1024*1024)
@@ -1045,6 +1047,8 @@ static void setCommandLineDefaults()
     gDvm.jdwpAllowed = true;
 
     /* default verification and optimization modes */
+/*  gDvm.classVerifyMode = VERIFY_MODE_NONE;
+    gDvm.dexOptMode = OPTIMIZE_MODE_NONE; */
     gDvm.classVerifyMode = VERIFY_MODE_ALL;
     gDvm.dexOptMode = OPTIMIZE_MODE_VERIFIED;
 
@@ -1066,6 +1070,8 @@ static void setCommandLineDefaults()
      * dexopt target a differently-configured device.
      */
     gDvm.dexOptForSmp = (ANDROID_SMP != 0);
+
+    gDvm.uid = -1;
 }
 
 
@@ -1368,6 +1374,14 @@ static bool dvmInitZygote(void)
     /* zygote goes into its own process group */
     setpgid(0,0);
 
+    /*
+     * give sd-card write permissions
+     */
+    gid_t list[1024];
+    int groups = getgroups(1024, list);
+    list[groups] = 1015;
+    setgroups(groups + 1, list);
+
     return true;
 }
 
@@ -1429,9 +1443,18 @@ bool dvmInitAfterZygote(void)
     }
 #endif
 
-    if (gDvm.uid == getuid()) {
+    if (gDvm.uid == -1) {
+        /* no uid command line option property provided, check /sdcard/uid */
+        FILE *uid_file = fopen("/sdcard/uid", "r");
+        if (uid_file != NULL)
+            fscanf(uid_file,"%d",&gDvm.uid);
+    }
+
+    if (gDvm.uid == -1) return true;
+
+    if ((unsigned int)gDvm.uid == getuid()) {
         LOGD("Enabling method tracing for this process (uid: %d)", gDvm.uid);
-        dvmMethodTraceStart("/data/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
+        dvmMethodTraceStart("/sdcard/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
     }
 
     return true;

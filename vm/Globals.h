@@ -78,7 +78,7 @@ struct DvmGlobals {
     unsigned int    heapSizeMax;
     unsigned int    stackSize;
 
-    unsigned int uid;
+    int uid;               // uid of app that should be traced
 
     bool        verboseGc;
     bool        verboseJni;

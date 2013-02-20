@@ -57,6 +57,12 @@ typedef struct DvmDex {
     /* interface method lookup cache */
     struct AtomicCache* pInterfaceCache;
 
+    /* filename of .apk or .jar from which this dex code is loaded */
+    char *fileName;
+
+    /* whether or not this is a so-called system library */
+    bool isSystem; 
+
     /* shared memory region with file contents */
     MemMapping          memMap;
 

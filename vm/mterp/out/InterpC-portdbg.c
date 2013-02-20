@@ -3954,7 +3954,7 @@ GOTO_TARGET(returnFromMethod)
         debugSaveArea = saveArea;
 #endif
 #if (INTERP_TYPE == INTERP_DBG)
-        TRACE_METHOD_EXIT(self, curMethod);
+        TRACE_METHOD_EXIT(self, curMethod, &retval);
 #endif
 
         /* back up to previous frame and see if we hit a break */
@@ -4360,7 +4360,7 @@ GOTO_TARGET(invokeMethod, bool methodCallRange, const Method* _methodToCall,
             }
 #endif
 #if (INTERP_TYPE == INTERP_DBG)
-            TRACE_METHOD_EXIT(self, methodToCall);
+            TRACE_METHOD_EXIT(self, methodToCall, &retval);
 #endif
 
             /* pop frame off */

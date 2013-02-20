@@ -177,7 +177,7 @@ void dvmConvertUtf8ToUtf16(u2* utf16Str, const char* utf8Str)
  * Given a UTF-16 string, compute the length of the corresponding UTF-8
  * string in bytes.
  */
-static int utf16_utf8ByteLen(const u2* utf16Str, int len)
+int dvmUtf16_utf8ByteLen(const u2* utf16Str, int len)
 {
     int utf8Len = 0;
 
@@ -201,10 +201,10 @@ static int utf16_utf8ByteLen(const u2* utf16Str, int len)
 /*
  * Convert a UTF-16 string to UTF-8.
  *
- * Make sure you allocate "utf8Str" with the result of utf16_utf8ByteLen(),
+ * Make sure you allocate "utf8Str" with the result of dvmUtf16_utf8ByteLen(),
  * not just "len".
  */
-static void convertUtf16ToUtf8(char* utf8Str, const u2* utf16Str, int len)
+void dvmConvertUtf16ToUtf8(char* utf8Str, const u2* utf16Str, int len)
 {
     assert(len >= 0);
 
@@ -403,11 +403,11 @@ char* dvmCreateCstrFromString(StringObject* jstr)
     data = (const u2*) chars->contents + offset;
     assert(offset + len <= (int) chars->length);
 
-    byteLen = utf16_utf8ByteLen(data, len);
+    byteLen = dvmUtf16_utf8ByteLen(data, len);
     newStr = (char*) malloc(byteLen+1);
     if (newStr == NULL)
         return NULL;
-    convertUtf16ToUtf8(newStr, data, len);
+    dvmConvertUtf16ToUtf8(newStr, data, len);
 
     return newStr;
 }
@@ -422,7 +422,7 @@ void dvmCreateCstrFromStringRegion(StringObject* jstr, int start, int len,
     const u2* data;
 
     data = dvmStringChars(jstr) + start;
-    convertUtf16ToUtf8(buf, data, len);
+    dvmConvertUtf16ToUtf8(buf, data, len);
 }
 
 /*
@@ -448,7 +448,7 @@ int dvmStringUtf8ByteLen(StringObject* jstr)
     data = (const u2*) chars->contents + offset;
     assert(offset + len <= (int) chars->length);
 
-    return utf16_utf8ByteLen(data, len);
+    return dvmUtf16_utf8ByteLen(data, len);
 }
 
 /*

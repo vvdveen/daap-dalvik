@@ -199,6 +199,7 @@ void dvmDexFileFree(DvmDex* pDvmDex)
     free(pDvmDex->pResClasses);
     free(pDvmDex->pResMethods);
     free(pDvmDex->pResFields);
+    free(pDvmDex->fileName); 
     dvmFreeAtomicCache(pDvmDex->pInterfaceCache);
 
     sysReleaseShmem(&pDvmDex->memMap);

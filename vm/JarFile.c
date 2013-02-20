@@ -335,6 +335,11 @@ tryArchive:
 
     LOGV("Successfully opened '%s' in '%s'\n", kDexInJarName, fileName);
 
+    pDvmDex->fileName = malloc(strlen(fileName)+1);
+    strcpy(pDvmDex->fileName, fileName); 
+    pDvmDex->isSystem = false;
+    if (strncmp(fileName,"/system/framework/",strlen("/system/framework/")) == 0) pDvmDex->isSystem = true;
+
     *ppJarFile = (JarFile*) calloc(1, sizeof(JarFile));
     (*ppJarFile)->archive = archive;
     (*ppJarFile)->cacheFileName = cachedName;

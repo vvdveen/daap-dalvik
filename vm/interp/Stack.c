@@ -524,7 +524,7 @@ void dvmCallMethodV(Thread* self, const Method* method, Object* obj,
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, pResult, method, self);
-        TRACE_METHOD_EXIT(self, method);
+        TRACE_METHOD_EXIT(self, method, pResult);
     } else {
         dvmInterpret(self, method, pResult);
     }
@@ -628,7 +628,7 @@ void dvmCallMethodA(Thread* self, const Method* method, Object* obj,
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, pResult, method, self);
-        TRACE_METHOD_EXIT(self, method);
+        TRACE_METHOD_EXIT(self, method, pResult);
     } else {
         dvmInterpret(self, method, pResult);
     }
@@ -737,7 +737,7 @@ Object* dvmInvokeMethod(Object* obj, const Method* method,
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, &retval, method, self);
-        TRACE_METHOD_EXIT(self, method);
+        TRACE_METHOD_EXIT(self, method, &retval);
     } else {
         dvmInterpret(self, method, &retval);
     }

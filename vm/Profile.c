@@ -143,6 +143,7 @@ bool dvmProfilingStartup(void)
      */
     memset(&gDvm.methodTrace, 0, sizeof(gDvm.methodTrace));
     dvmInitMutex(&gDvm.methodTrace.startStopLock);
+    dvmInitMutex(&gDvm.methodTrace.addLock);
     pthread_cond_init(&gDvm.methodTrace.threadExitCond, NULL);
 
     ClassObject* clazz =
@@ -666,18 +667,408 @@ void dvmMethodTraceStop(void)
 }
 
 
+
+/*
+ * Convert a class descriptor into its usual format. Caller must free the result.
+ */
+char *convertDescriptor(const char *descriptor) {
+
+    int len = strlen(descriptor);
+
+    if (len == 1) {
+        char *class_descriptor = (char *) malloc(sizeof(char) * 8);
+        if (class_descriptor == NULL) return NULL;
+
+        memset(class_descriptor, 0, 8);
+
+        switch(*descriptor) {
+            case 'V': { sprintf(class_descriptor, "void"   ); break; }
+            case 'Z': { sprintf(class_descriptor, "boolean"); break; }
+            case 'B': { sprintf(class_descriptor, "byte"   ); break; }
+            case 'S': { sprintf(class_descriptor, "short"  ); break; }
+            case 'I': { sprintf(class_descriptor, "int"    ); break; }
+            case 'F': { sprintf(class_descriptor, "float"  ); break; }
+            case 'J': { sprintf(class_descriptor, "long"   ); break; }
+            case 'D': { sprintf(class_descriptor, "double" ); break; } 
+            case 'C': { sprintf(class_descriptor, "char"   ); break; } 
+        }
+        return class_descriptor;
+    }
+
+    char *class_descriptor = (char *) malloc(sizeof(char) * len);
+
+    const char *src;
+    char *dst;
+    for (dst = class_descriptor, src = descriptor + 1; *src != 0; src++, dst++) {
+        if (*src == '/') *dst = '.';
+        else             *dst = *src;
+    }   
+    class_descriptor[len-2] = 0;
+
+    return class_descriptor;
+}
+
+
+/* 
+ * Given an object, call its .toString() function and return this as a C
+ * string. Caller must free the result.
+ */
+char *objectToString(Thread *self, Object *object) {
+    char *str = (char *) malloc(128 * sizeof(char));
+    if (str == NULL) return NULL;
+
+    if (object == 0)               return strcpy(str,"null\0");
+    if (!dvmIsValidObject(object)) return strcpy(str,"\0");
+    if (dvmCheckException(self))   return strcpy(str,"\0"); /* exception pending */
+
+    /* Get the toString() method */
+    Method *toString = object->clazz->vtable[gDvm.voffJavaLangObject_toString];
+    assert(dvmCompareNameDescriptorAndMethod("toString", "()Ljava/lang/String", toString) == 0);
+
+    /* Execute the toString() method */    
+    JValue result;
+    dvmCallMethod(self, toString, object, &result);
+
+    /* This may result in an exception being thrown by buggy .toString() implementations, which we have to clear */
+    if (dvmCheckException(self)) {
+        dvmClearException(self);
+        return strcpy(str,"\0"); /* toString() failed */
+    }
+
+    /* Free our temporary result-string, as the next call will allocate one for us */
+    free(str);
+    
+    /* <result.l> now contains a StringObject containing the toString() value of <object>. Convert it to a C string. */
+    return dvmCreateCstrFromString(result.l);
+}
+
+/* 
+ * Given a method, get its modifiers. Caller must free the result.
+ */
+char *getModifiers(const Method* method) {
+    char *modifiers = (char *) malloc(128 * sizeof(char));
+    if (modifiers == NULL) return NULL;
+
+    memset(modifiers, 0, 128);
+
+    if (dvmIsAbstractMethod    (method)) strcat(modifiers, "abstract "    );
+    if (dvmIsFinalMethod       (method)) strcat(modifiers, "final "       );
+    if (dvmIsNativeMethod      (method)) strcat(modifiers, "native "      );
+    if (dvmIsPrivateMethod     (method)) strcat(modifiers, "private "     );
+    if (dvmIsProtectedMethod   (method)) strcat(modifiers, "protected "   ); 
+    if (dvmIsPublicMethod      (method)) strcat(modifiers, "public "      );
+    if (dvmIsStaticMethod      (method)) strcat(modifiers, "static "      );
+    if (dvmIsSynchronizedMethod(method)) strcat(modifiers, "synchronized ");
+
+    return modifiers;
+}
+
+/*
+ * Given a parameter (low/high) and its descriptor, get its string
+ * representation ( "(<type>) <value>" ). Caller must free the result.
+ */
+char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
+    char *result = (char *) malloc(sizeof(char) * 128);
+    if (result == NULL) return NULL;
+
+    memset(result, 0, 128);
+    
+    switch (descriptor[0]) {
+        case 'Z': { if ((bool)low) sprintf(result, "(boolean) true");
+                    else           sprintf(result, "(boolean) false");  break; }
+                    
+        case 'B': { sprintf(result, "(byte) %hhd", (s1) low);    break; }
+        case 'S': { sprintf(result, "(short) %hd", (s2) low);    break; }
+        case 'I': { sprintf(result, "(int) %d",    (s4) low);    break; }
+        case 'F': { sprintf(result, "(float) %f",  (float) low); break; }
+                  
+        case 'J': { sprintf(result, "(long) %lld",           ((s8)high << (s8)32L) | (s8)low); break; }
+        case 'D': { sprintf(result, "(double) %f", (double) (((u8)high << (u8)32L) | (u8)low)); break; }
+  
+        case 'V': { sprintf(result, "(void)"); break; }
+
+        case 'C': { 
+                    /* dvmConvertUtf16ToUtf8() expects a string */
+                    u2 str = (u2) low;
+
+                    /* allocate enough space */
+                    char *c = malloc(dvmUtf16_utf8ByteLen(&str, 1));
+
+                    /* convert the utf16 string of size 1 to a utf8 string */
+                    dvmConvertUtf16ToUtf8(c, &str, 1);
+
+                    /* convert newlines and quotes */
+                    char *p;
+                    for (p = c; *p; p++) {
+                        if (*p == '\n' || *p == '\r') *p = ' ';
+                        if (*p == '"')                *p = '\'';
+                    }
+
+                    /* setup the parameter string */
+                    sprintf(result, "(char) \"%s\"", c);
+
+                    /* free the utf8 string */
+                    free(c);
+
+                    break;
+                  }
+
+        case '[': /* fall through */
+        case 'L': {
+                    /* free the temporary result string, as we may need a larger buffer */
+                    free(result);
+
+                    /* convert descriptor string to its usual format */
+                    char *descriptorClass = convertDescriptor(descriptor);
+
+                    /* get a string representation of the array */
+                    char *string = objectToString(self, (Object *) low);
+
+                    /* allocate enough memory to store this string plus some extras */
+                    result = (char *) malloc(sizeof(char) * (strlen(descriptorClass) + strlen(string)) + 32);
+
+                    /* convert newlines and quotes */
+                    char *p;
+                    for (p = string; *p; p++) {
+                        if (*p == '\n' || *p == '\r') *p = ' ';
+                        if (*p == '"')                *p = '\'';
+                    }
+
+                    /* setup the parameter string */
+                    sprintf(result, "(%s) \"%s\"", descriptorClass, string);
+
+                    /* free the descriptor string */
+                    free(descriptorClass);
+
+                    /* free the string representation, as we copied it into the result string */
+                    free(string); 
+
+                    break; 
+                  }
+    }
+    return result;
+}
+
+/* 
+ * Return <this> of the current method, or NULL if the method is static. Caller
+ * must free the result.
+ */
+char *getThis(Thread *self, const Method *method) {
+    /* frame pointer */
+    const u4 *frameptr = self->curFrame;
+
+    if (!dvmIsStaticMethod(method)) return objectToString(self, (Object *) frameptr[0]);
+    return NULL;
+}
+
+/*
+ * Populate an string array of parameters by looping over the registers of the
+ * current frame. Caller must free the result.
+ */
+char **getParameters(Thread *self, const Method *method, int parameterCount) {
+
+    DexParameterIterator dpi;
+    dexParameterIteratorInit(&dpi, &method->prototype);
+
+    const char *shorty = dexProtoGetShorty(&method->prototype) + 1;
+      
+    /* frame pointer */
+    const u4 *frameptr = self->curFrame;
+    /* number of locals for this method */
+    int locals = method->registersSize - method->insSize;
+
+    /* string array that will contain the parameters */
+    char **parameters = malloc(parameterCount * sizeof(char *));
+    if (parameters == NULL) return NULL;
+
+    /* loop over registers and get a string representation of them. Skip the first register if this is a <this> reference */
+    int i, j;
+    for (i = locals + (dvmIsStaticMethod(method) ? 0 : 1), j = 0; i < method->registersSize; i++, j++) {
+        if (shorty[j] == 'J' || shorty[j] == 'D') {
+            /* 64 bit fields (longs and doubles) use two registers */
+            parameters[j] = parameterToString(self, dexParameterIteratorNextDescriptor(&dpi), frameptr[i], frameptr[i + 1]);
+            i++;
+        } else {
+            parameters[j] = parameterToString(self, dexParameterIteratorNextDescriptor(&dpi), frameptr[i], 0);
+        }
+    }
+
+    return parameters;
+}
+
+/*
+ * Combine the parameters from a provided string array into one printable
+ * string. Caller must free the result.
+ */
+char *getParameterString(Thread *self, const Method *method, char **parameters, int parameterCount) {
+
+    int i;
+
+    /* concatenate the parameters */
+    int len = 0;
+    for (i = 0; i < parameterCount; i++) len += strlen(parameters[i]);
+    char *parameterString = (char *) malloc((sizeof(char) * len) + (parameterCount * 8) + 1);
+    if (parameterString == NULL) return NULL;
+    memset(parameterString, 0, sizeof(parameterString));
+
+    for (i = 0; i < parameterCount; i++) {
+        strcat(parameterString, parameters[i]);
+
+        /* append ", " only if another parameter follows */
+        if (i + 1 < parameterCount) {
+            strcat(parameterString, ", ");
+        }
+    }
+
+    return parameterString;
+}
+
+/*
+ * Generate whitespace of <depth> characters long. Caller must free the result.
+ */
+char *getWhitespace(int depth) {
+    char *whitespace = (char *) malloc((depth * sizeof(char)) + 1);
+    if (whitespace == NULL) return NULL;
+
+    /* Fill the whitespace */
+    memset(whitespace, ' ', depth);
+
+    /* Append \0 */
+    whitespace[depth] = 0;
+
+    return whitespace;
+}
+
+void handle_method(Thread *self, const Method *method, MethodTraceState *state) {
+    int i;
+
+    /* number of arguments for this method */
+    int parameterCount = dexProtoGetParameterCount(&method->prototype);
+
+    char *whitespace      = getWhitespace(self->depth);
+    char *modifiers       = getModifiers(method);
+    char *return_type     = convertDescriptor(dexProtoGetReturnType(&method->prototype));
+    char *this            = getThis(self, method);
+    char **parameters     = getParameters(self, method, parameterCount);
+    char *parameterString = getParameterString(self, method, parameters, parameterCount);
+    char *classDescriptor = convertDescriptor(method->clazz->descriptor);
+
+/*    
+    LOGD_TRACE("Thread: %s\nCode located in %s\nCalled from %s\n",
+                dvmGetThreadName(self), 
+                method->clazz->pDvmDex->fileName, 
+                (dvmGetCallerClass(self->curFrame) == NULL) ? "unknown" : dvmGetCallerClass(self->curFrame)->pDvmDex->fileName);
+*/
+
+/*
+    char *filename;
+    if (dvmGetCallerClass(self->curFrame) != NULL) {
+        filename = dvmGetCallerClass(self->curFrame)->pDvmDex->fileName;
+    } else {
+        filename = "null";
+    }
+*/
+
+    dvmLockMutex(&state->addLock);
+    if (dvmIsConstructorMethod(method)) LOGD_TRACE("C: %snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString);
+    else {
+        if (this == NULL)               LOGD_TRACE("F: %s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString);
+        else                            LOGD_TRACE("F: %s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString);
+    }
+    dvmUnlockMutex(&state->addLock);
+
+    free(whitespace);
+    free(modifiers);
+    free(return_type);
+    if (this != NULL) free(this);
+    for (i = 0; i < parameterCount; i++) free(parameters[i]);
+    free(parameters);
+    free(parameterString);
+    free(classDescriptor);
+
+}
+
+void handle_return(Thread *self, const Method *method, MethodTraceState *state, JValue *retval) {
+
+    /* Did we arrive here via a thrown exception... */
+    if (dvmGetException(self)) {
+
+        char *whitespace = getWhitespace(self->depth);
+        char *classDescriptor = convertDescriptor(dvmGetException(self)->clazz->descriptor);
+
+        dvmLockMutex(&state->addLock);
+        LOGD_TRACE("R: %sthrows %s\n", whitespace, classDescriptor);
+        dvmUnlockMutex(&state->addLock);
+
+        free(whitespace);
+        free(classDescriptor);
+
+    /* ... or via a plain return statement? */
+    } else {
+
+        char *whitespace = getWhitespace(self->depth);
+
+        /* parameterToString() expects two u4 parameters. We will have to split retval in half. */
+        u4 low  = (retval == 0) ? 0 : (u4)  *((u8*)retval);
+        u4 high = (retval == 0) ? 0 : (u4) (*((u8*)retval) >> 32);
+        char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
+
+        dvmLockMutex(&state->addLock);
+        /* TODO: escape newlines in <return_value> */
+        LOGD_TRACE("R: %sreturn %s\n", whitespace, returnString);
+        dvmUnlockMutex(&state->addLock);
+
+        free(whitespace);
+        free(returnString);
+    }
+}
+
 /*
  * We just did something with a method.  Emit a record.
  *
- * Multiple threads may be banging on this all at once.  We use atomic ops
+ * Multiple threads may be banging on this all at once. We use atomic ops
  * rather than mutexes for speed.
  */
-void dvmMethodTraceAdd(Thread* self, const Method* method, int action)
+void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* retval)
 {
     MethodTraceState* state = &gDvm.methodTrace;
     u4 clockDiff, methodVal;
     int oldOffset, newOffset;
     u1* ptr;
+    
+    if (method == NULL)
+        /* Not sure what's going on, but we better not try. */
+        return;
+
+    /* If the bytecode of the caller of this method is from a system jar, then
+     * enter if the current method code is not from a system jar.
+     *
+     * If you would like to see *everything*, you can remove this. You would
+     * then probably have to increase the launch timeout to ensure packages can
+     * still be started while logging with adb though.
+     *
+     * This also removes any trace output from system threads (GC, Binder, HeapWorker, ...).
+     */
+    ClassObject *caller_clazz = dvmGetCallerClass(self->curFrame);
+    if ( caller_clazz != NULL &&
+       ( caller_clazz->pDvmDex->isSystem && 
+        method->clazz->pDvmDex->isSystem))
+        /* We are currently executing bytecode from a system jar, while the
+         * bytecode that called the current method is also from a system jar.
+         * This is not interesting for us.
+         */
+/*      LOGD_TRACE("pDvmDex->filename: %s\n",caller_clazz->pDvmDex->fileName); */
+        return; 
+
+    /* Only enter if we did not enter earlier to avoid inception. This happens
+     * when we call toString() via objectToString().
+     *
+     * This may be removed if we do not trace system jar code anyway.
+     */
+    if (self->inMethodTraceAdd) return;
+
+    /* We are now in dvmMethodTraceAdd() */
+    self->inMethodTraceAdd = true;
 
     /*
      * We can only access the per-thread CPU clock from within the
@@ -700,6 +1091,9 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action)
         newOffset = oldOffset + TRACE_REC_SIZE;
         if (newOffset > state->bufferSize) {
             state->overflow = true;
+ 
+            /* We are leaving dvmMethodTraceAdd(). */
+            self->inMethodTraceAdd = false;
             return;
         }
     } while (android_atomic_release_cas(oldOffset, newOffset,
@@ -711,6 +1105,18 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action)
     clockDiff = (u4) (now - self->cpuClockBase);
 
     methodVal = METHOD_COMBINE((u4) method, action);
+
+
+    if (action == METHOD_TRACE_ENTER) {
+        /* We are entering a method... */
+        handle_method(self, method, state);
+        self->depth++;
+    } else if (action == METHOD_TRACE_EXIT) {
+        /* We are returning from a method... */
+        self->depth = (self->depth == 0 ? 0 : self->depth-1);
+        handle_return(self, method, state, retval);
+    }
+ 
 
     /*
      * Write data into "oldOffset".
@@ -725,6 +1131,9 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action)
     *ptr++ = (u1) (clockDiff >> 8);
     *ptr++ = (u1) (clockDiff >> 16);
     *ptr++ = (u1) (clockDiff >> 24);
+   
+    /* We are leaving dvmMethodTraceAdd(). */
+    self->inMethodTraceAdd = false;
 }
 
 /*
@@ -803,7 +1212,7 @@ void dvmMethodTraceGCBegin(void)
 }
 void dvmMethodTraceGCEnd(void)
 {
-    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.gcMethod);
+    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.gcMethod, NULL);
 }
 
 /*
@@ -815,7 +1224,7 @@ void dvmMethodTraceClassPrepBegin(void)
 }
 void dvmMethodTraceClassPrepEnd(void)
 {
-    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod);
+    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod, NULL);
 }
 
 

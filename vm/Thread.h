@@ -228,6 +228,10 @@ typedef struct Thread {
     bool        cpuClockBaseSet;
     u8          cpuClockBase;
 
+    /* are we in dvmMethodTraceAdd()? */
+    bool        inMethodTraceAdd;
+    int         depth;
+
     /* memory allocation profiling state */
     AllocProfState allocProf;
 
