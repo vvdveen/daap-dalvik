@@ -1000,10 +1000,10 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state) 
 */
 
     dvmLockMutex(&state->addLock);
-    if (dvmIsConstructorMethod(method)){LOGD_TRACE("C: %snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
+    if (dvmIsConstructorMethod(method)){LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
-        if (this == NULL) {             LOGD_TRACE("F: %s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
-        else {                          LOGD_TRACE("F: %s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
+        if (this == NULL) {             LOGD_TRACE("%s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
+        else {                          LOGD_TRACE("%s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
     }
     dvmUnlockMutex(&state->addLock);
 
@@ -1027,7 +1027,7 @@ void handle_return(Thread *self, const Method *method, MethodTraceState *state, 
     char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
 
     dvmLockMutex(&state->addLock);
-    LOGD_TRACE("R: %sreturn %s\n", whitespace, returnString);
+    LOGD_TRACE("%sreturn %s\n", whitespace, returnString);
     dvmUnlockMutex(&state->addLock);
 
     free(whitespace);
@@ -1042,7 +1042,7 @@ void handle_throws(Thread *self, const Method *method, MethodTraceState *state, 
     else                             classDescriptor = convertDescriptor(  ((Object*) retval )->clazz->descriptor);
 
     dvmLockMutex(&state->addLock);
-    LOGD_TRACE("R: %sthrows %s\n", whitespace, classDescriptor);
+    LOGD_TRACE("%sthrows %s\n", whitespace, classDescriptor);
     dvmUnlockMutex(&state->addLock);
 
     free(whitespace);
