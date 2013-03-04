@@ -232,6 +232,9 @@ typedef struct Thread {
     bool        inMethodTraceAdd;
     int         depth;
 
+    /* file pointer for method trace output */
+    FILE        *dump;
+
     /* memory allocation profiling state */
     AllocProfState allocProf;
 

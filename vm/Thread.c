@@ -964,7 +964,7 @@ static Thread* allocThread(int interpStackSize)
     /* we are definitely not in dvmMethodTraceAdd() */
     thread->inMethodTraceAdd = false;
     thread->depth = 0;
-
+    
     /* give the thread code a chance to set things up */
     dvmInitInterpStack(thread, interpStackSize);
 
@@ -1075,6 +1075,11 @@ static void freeThread(Thread* thread)
 {
     if (thread == NULL)
         return;
+
+    if (thread->dump != NULL) {
+        LOGD("Closing method trace output file @ %p\n",thread->dump); 
+        fclose(thread->dump);
+    }
 
     /* thread->threadId is zero at this point */
     LOGVV("threadid=%d: freeing\n", thread->threadId);

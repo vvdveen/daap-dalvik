@@ -875,6 +875,7 @@ int dvmFindCatchBlock(Thread* self, int relPc, Object* exception,
     bool scanOnly, void** newFrame)
 {
     void* fp = self->curFrame;
+    void *old_curFrame;
     int catchAddr = -1;
 
     assert(!dvmCheckException(self));
@@ -894,7 +895,14 @@ int dvmFindCatchBlock(Thread* self, int relPc, Object* exception,
 
         /* output method profiling info */
         if (!scanOnly) {
-            TRACE_METHOD_UNROLL(self, saveArea->method);
+            /* We need to update the curFrame here already, otherwise we will
+             * miss exceptions thrown by system libraries to target bytecode.
+             * This may break the rest of dvmFindCatchBlock() so let's back it
+             * up and restore it when our tracing code finishes */
+              old_curFrame = self->curFrame;
+            self->curFrame = fp;
+            TRACE_METHOD_UNROLL(self, saveArea->method, (JValue*) exception);
+            self->curFrame = old_curFrame;
         }
 
         /*
@@ -947,7 +955,7 @@ int dvmFindCatchBlock(Thread* self, int relPc, Object* exception,
         }
     }
 
-    if (!scanOnly)
+    if (!scanOnly) 
         self->curFrame = fp;
 
     /*

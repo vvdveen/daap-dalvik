@@ -31,7 +31,11 @@
 
 /* A different log tag for trace output so that we can filter it */
 #define TRACE_LOG_TAG      LOG_TAG "-trace"
-#define LOGD_TRACE(...)    LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__)
+/* Switch these defines to dump output to logcat */
+#define LOGX_TRACE(...)    LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__)
+#define LOGD_TRACE(...)    { if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); fsync(fileno(self->dump)); }
+/* prep_log() is defined in Profile.c */
+
 
 struct Thread;      // extern
 
@@ -151,11 +155,11 @@ enum {
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_EXIT);           \
         }                                                                   \
     } while(0);
-#define TRACE_METHOD_UNROLL(_self, _method)                                \
+#define TRACE_METHOD_UNROLL(_self, _method, _exception)                     \
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL, NULL); \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL, _exception); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_UNROLL);         \
         }                                                                   \

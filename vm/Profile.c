@@ -667,6 +667,17 @@ void dvmMethodTraceStop(void)
 }
 
 
+/*
+ * Open a dump.<TID> file on /sdcard/ for dumping the method trace into.
+ */
+void prep_log() {
+    Thread *self = dvmThreadSelf();
+    char    filename[30];
+    sprintf(filename,"%s.%d.%d","/sdcard/dump",getpid(),self->systemTid);
+    self->dump = fopen(filename,"w");
+    LOGD("Method trace output file %s is open @ %p\n",filename,self->dump);
+}
+
 
 /*
  * Convert a class descriptor into its usual format. Caller must free the result.
@@ -692,6 +703,22 @@ char *convertDescriptor(const char *descriptor) {
             case 'D': { sprintf(class_descriptor, "double" ); break; } 
             case 'C': { sprintf(class_descriptor, "char"   ); break; } 
         }
+        return class_descriptor;
+    }
+    
+    if (*descriptor == '[') {
+        /* recursion! */
+        char *rest = convertDescriptor(descriptor + 1);
+        
+        /* allocate enough space for <rest> plus 3: ....[]\0 */
+        len = strlen(rest) + 3;
+        char *class_descriptor = (char *) malloc(sizeof(char) * len);
+        if (class_descriptor == NULL) return NULL;
+
+        memset(class_descriptor, 0, len);
+        sprintf(class_descriptor, "%s[]", rest);
+        free(rest);
+
         return class_descriptor;
     }
 
@@ -735,11 +762,21 @@ char *objectToString(Thread *self, Object *object) {
         return strcpy(str,"\0"); /* toString() failed */
     }
 
-    /* Free our temporary result-string, as the next call will allocate one for us */
-    free(str);
-    
     /* <result.l> now contains a StringObject containing the toString() value of <object>. Convert it to a C string. */
-    return dvmCreateCstrFromString(result.l);
+    if (result.l == 0) return strcpy(str,"\0");
+    char *string = dvmCreateCstrFromString(result.l);
+    
+    /* convert newlines and quotes */
+    char *p;
+    for (p = string; *p; p++) {
+        if (*p == '\n' || *p == '\r') *p = ' ';
+        if (*p == '"')                *p = '\'';
+    }
+
+    /* Free our temporary result-string, as we should have a proper one by now */
+    free(str);
+
+    return string;
 }
 
 /* 
@@ -774,16 +811,16 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
     memset(result, 0, 128);
     
     switch (descriptor[0]) {
-        case 'Z': { if ((bool)low) sprintf(result, "(boolean) true");
-                    else           sprintf(result, "(boolean) false");  break; }
+        case 'Z': { if ((bool)low) sprintf(result, "(boolean) \"true\"");
+                    else           sprintf(result, "(boolean) \"false\"");  break; }
                     
-        case 'B': { sprintf(result, "(byte) %hhd", (s1) low);    break; }
-        case 'S': { sprintf(result, "(short) %hd", (s2) low);    break; }
-        case 'I': { sprintf(result, "(int) %d",    (s4) low);    break; }
-        case 'F': { sprintf(result, "(float) %f",  (float) low); break; }
+        case 'B': { sprintf(result, "(byte) \"%hhd\"", (s1) low);    break; }
+        case 'S': { sprintf(result, "(short) \"%hd\"", (s2) low);    break; }
+        case 'I': { sprintf(result, "(int) \"%d\"",    (s4) low);    break; }
+        case 'F': { sprintf(result, "(float) \"%f\"",  (float) low); break; }
                   
-        case 'J': { sprintf(result, "(long) %lld",           ((s8)high << (s8)32L) | (s8)low); break; }
-        case 'D': { sprintf(result, "(double) %f", (double) (((u8)high << (u8)32L) | (u8)low)); break; }
+        case 'J': { sprintf(result, "(long) \"%lld\"",           ((s8)high << (s8)32L) | (s8)low); break; }
+        case 'D': { sprintf(result, "(double) \"%f\"", (double) (((u8)high << (u8)32L) | (u8)low)); break; }
   
         case 'V': { sprintf(result, "(void)"); break; }
 
@@ -827,13 +864,6 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     /* allocate enough memory to store this string plus some extras */
                     result = (char *) malloc(sizeof(char) * (strlen(descriptorClass) + strlen(string)) + 32);
 
-                    /* convert newlines and quotes */
-                    char *p;
-                    for (p = string; *p; p++) {
-                        if (*p == '\n' || *p == '\r') *p = ' ';
-                        if (*p == '"')                *p = '\'';
-                    }
-
                     /* setup the parameter string */
                     sprintf(result, "(%s) \"%s\"", descriptorClass, string);
 
@@ -857,7 +887,7 @@ char *getThis(Thread *self, const Method *method) {
     /* frame pointer */
     const u4 *frameptr = self->curFrame;
 
-    if (!dvmIsStaticMethod(method)) return objectToString(self, (Object *) frameptr[0]);
+    if (!dvmIsStaticMethod(method)) return(objectToString(self, (Object *) frameptr[0]));
     return NULL;
 }
 
@@ -948,10 +978,10 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state) 
     char *whitespace      = getWhitespace(self->depth);
     char *modifiers       = getModifiers(method);
     char *return_type     = convertDescriptor(dexProtoGetReturnType(&method->prototype));
+    char *classDescriptor = convertDescriptor(method->clazz->descriptor);
     char *this            = getThis(self, method);
     char **parameters     = getParameters(self, method, parameterCount);
     char *parameterString = getParameterString(self, method, parameters, parameterCount);
-    char *classDescriptor = convertDescriptor(method->clazz->descriptor);
 
 /*    
     LOGD_TRACE("Thread: %s\nCode located in %s\nCalled from %s\n",
@@ -970,10 +1000,10 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state) 
 */
 
     dvmLockMutex(&state->addLock);
-    if (dvmIsConstructorMethod(method)) LOGD_TRACE("C: %snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString);
+    if (dvmIsConstructorMethod(method)){LOGD_TRACE("C: %snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
-        if (this == NULL)               LOGD_TRACE("F: %s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString);
-        else                            LOGD_TRACE("F: %s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString);
+        if (this == NULL) {             LOGD_TRACE("F: %s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
+        else {                          LOGD_TRACE("F: %s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
     }
     dvmUnlockMutex(&state->addLock);
 
@@ -989,40 +1019,35 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state) 
 }
 
 void handle_return(Thread *self, const Method *method, MethodTraceState *state, JValue *retval) {
+    char *whitespace = getWhitespace(self->depth);
 
-    /* Did we arrive here via a thrown exception... */
-    if (dvmGetException(self)) {
+    /* parameterToString() expects two u4 parameters. We will have to split retval in half. */
+    u4 low  = (retval == 0) ? 0 : (u4)  *((u8*)retval);
+    u4 high = (retval == 0) ? 0 : (u4) (*((u8*)retval) >> 32);
+    char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
 
-        char *whitespace = getWhitespace(self->depth);
-        char *classDescriptor = convertDescriptor(dvmGetException(self)->clazz->descriptor);
+    dvmLockMutex(&state->addLock);
+    LOGD_TRACE("R: %sreturn %s\n", whitespace, returnString);
+    dvmUnlockMutex(&state->addLock);
 
-        dvmLockMutex(&state->addLock);
-        LOGD_TRACE("R: %sthrows %s\n", whitespace, classDescriptor);
-        dvmUnlockMutex(&state->addLock);
-
-        free(whitespace);
-        free(classDescriptor);
-
-    /* ... or via a plain return statement? */
-    } else {
-
-        char *whitespace = getWhitespace(self->depth);
-
-        /* parameterToString() expects two u4 parameters. We will have to split retval in half. */
-        u4 low  = (retval == 0) ? 0 : (u4)  *((u8*)retval);
-        u4 high = (retval == 0) ? 0 : (u4) (*((u8*)retval) >> 32);
-        char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
-
-        dvmLockMutex(&state->addLock);
-        /* TODO: escape newlines in <return_value> */
-        LOGD_TRACE("R: %sreturn %s\n", whitespace, returnString);
-        dvmUnlockMutex(&state->addLock);
-
-        free(whitespace);
-        free(returnString);
-    }
+    free(whitespace);
+    free(returnString);
 }
 
+void handle_throws(Thread *self, const Method *method, MethodTraceState *state, JValue *retval, int action) {
+    char *whitespace = getWhitespace(self->depth);
+    char *classDescriptor;
+    /* when action == METHOD_TRACE_UNROLL, retval will be an Object* exception */
+    if (action == METHOD_TRACE_EXIT) classDescriptor = convertDescriptor(dvmGetException(self)->clazz->descriptor);
+    else                             classDescriptor = convertDescriptor(  ((Object*) retval )->clazz->descriptor);
+
+    dvmLockMutex(&state->addLock);
+    LOGD_TRACE("R: %sthrows %s\n", whitespace, classDescriptor);
+    dvmUnlockMutex(&state->addLock);
+
+    free(whitespace);
+    free(classDescriptor);
+}
 /*
  * We just did something with a method.  Emit a record.
  *
@@ -1036,12 +1061,13 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
     int oldOffset, newOffset;
     u1* ptr;
     
-    if (method == NULL)
+    if (method == NULL) {
         /* Not sure what's going on, but we better not try. */
         return;
+    }
 
     /* If the bytecode of the caller of this method is from a system jar, then
-     * enter if the current method code is not from a system jar.
+     * enter only if the current method code is not from a system jar.
      *
      * If you would like to see *everything*, you can remove this. You would
      * then probably have to increase the launch timeout to ensure packages can
@@ -1051,14 +1077,15 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
      */
     ClassObject *caller_clazz = dvmGetCallerClass(self->curFrame);
     if ( caller_clazz != NULL &&
-       ( caller_clazz->pDvmDex->isSystem && 
-        method->clazz->pDvmDex->isSystem))
+         caller_clazz->pDvmDex->isSystem && 
+        method->clazz->pDvmDex->isSystem) {
         /* We are currently executing bytecode from a system jar, while the
          * bytecode that called the current method is also from a system jar.
          * This is not interesting for us.
          */
 /*      LOGD_TRACE("pDvmDex->filename: %s\n",caller_clazz->pDvmDex->fileName); */
         return; 
+    }
 
     /* Only enter if we did not enter earlier to avoid inception. This happens
      * when we call toString() via objectToString().
@@ -1109,12 +1136,25 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
 
     if (action == METHOD_TRACE_ENTER) {
         /* We are entering a method... */
+
+        char *whitespace = getWhitespace(self->depth);
         handle_method(self, method, state);
         self->depth++;
-    } else if (action == METHOD_TRACE_EXIT) {
+        free(whitespace);
+    } else if  (action == METHOD_TRACE_EXIT && !dvmCheckException(self)) {
         /* We are returning from a method... */
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
+        char *whitespace = getWhitespace(self->depth);
         handle_return(self, method, state, retval);
+        free(whitespace);
+    } else if ((action == METHOD_TRACE_EXIT &&  dvmCheckException(self)) ||
+               (action == METHOD_TRACE_UNROLL)) {
+        /* We are unrolling... */
+        self->depth = (self->depth == 0 ? 0 : self->depth-1);
+        char *whitespace = getWhitespace(self->depth);
+        handle_throws(self, method, state, retval, action);
+        free(whitespace);
+
     }
  
 
