@@ -1454,7 +1454,7 @@ bool dvmInitAfterZygote(void)
 
     if ((unsigned int)gDvm.uid == getuid()) {
         LOGD("Enabling method tracing for this process (uid: %d)", gDvm.uid);
-        dvmMethodTraceStart("/sdcard/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
+        dvmMethodTraceStart("/data/trace/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
     }
 
     return true;
