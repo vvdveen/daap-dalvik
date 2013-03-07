@@ -79,6 +79,7 @@ struct DvmGlobals {
     unsigned int    stackSize;
 
     int uid;               // uid of app that should be traced
+    int tracepath;         // 0 for "/sdcard/", 1 for "/data/trace"
 
     bool        verboseGc;
     bool        verboseJni;

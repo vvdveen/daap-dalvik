@@ -668,12 +668,13 @@ void dvmMethodTraceStop(void)
 
 
 /*
- * Open a dump.<TID> file in /data/trace/ for dumping the method trace into.
+ * Open a dump.<TID> file for dumping the method trace into.
  */
 void prep_log() {
     Thread *self = dvmThreadSelf();
-    char    filename[32];
-    sprintf(filename,"%s.%d.%d","/data/trace/dump",getpid(),self->systemTid);
+    char    filename[64];
+    if (gDvm.tracepath == 0) sprintf(filename,"%s.%d.%d","/sdcard/dump"    ,getpid(),self->systemTid);
+    else                     sprintf(filename,"%s.%d.%d","/data/trace/dump",getpid(),self->systemTid);
     self->dump = fopen(filename,"w");
     LOGD("Method trace output file %s is open @ %p\n",filename,self->dump);
 }

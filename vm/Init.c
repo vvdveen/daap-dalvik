@@ -996,6 +996,9 @@ static int dvmProcessOptions(int argc, const char* const argv[],
         } else if (strncmp(argv[i], "-uid:", 5) == 0) {
             gDvm.uid = atoi(argv[i]+5);
 
+        } else if (strcmp(argv[i], "-tracepath:/data/trace") == 0) {
+            gDvm.tracepath = 1; // "/data/trace/"
+
         } else {
             if (!ignoreUnrecognized) {
                 dvmFprintf(stderr, "Unrecognized option '%s'\n", argv[i]);
@@ -1072,6 +1075,7 @@ static void setCommandLineDefaults()
     gDvm.dexOptForSmp = (ANDROID_SMP != 0);
 
     gDvm.uid = -1;
+    gDvm.tracepath = 0; // default to /sdcard/
 }
 
 
@@ -1454,7 +1458,10 @@ bool dvmInitAfterZygote(void)
 
     if ((unsigned int)gDvm.uid == getuid()) {
         LOGD("Enabling method tracing for this process (uid: %d)", gDvm.uid);
-        dvmMethodTraceStart("/data/trace/dmtrace.trace", -1, 8 * 1024 * 1024, 0, false);
+        char dmtrace_file[64];    
+        if (gDvm.tracepath == 0) sprintf(dmtrace_file,"/sdcard/dmtrace.trace");
+        else                     sprintf(dmtrace_file,"/data/trace/dmtrace.trace");
+        dvmMethodTraceStart(dmtrace_file, -1, 8 * 1024 * 1024, 0, false);
     }
 
     return true;
