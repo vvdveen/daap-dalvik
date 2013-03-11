@@ -33,7 +33,7 @@
 #define TRACE_LOG_TAG      LOG_TAG "-trace"
 /* Switch these defines to dump output to logcat */
 #define LOGX_TRACE(...)    LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__)
-#define LOGD_TRACE(...)    { if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); fsync(fileno(self->dump)); }
+#define LOGD_TRACE(...)    { if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); }
 /* prep_log() is defined in Profile.c */
 
 

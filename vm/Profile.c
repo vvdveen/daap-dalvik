@@ -503,6 +503,14 @@ void dvmMethodTraceStop(void)
      */
     dvmLockMutex(&state->startStopLock);
 
+    Thread *thread;
+    for (thread = gDvm.threadList; thread != NULL; thread = thread->next) {
+        if (thread->dump != NULL) {
+            LOGD("closing method trace output @ %p\n", thread->dump);
+            fclose(thread->dump);
+        }
+    }
+
     if (!state->traceEnabled) {
         /* somebody already stopped it, or it was never started */
         LOGD("TRACE stop requested, but not running\n");
