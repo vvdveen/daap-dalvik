@@ -867,7 +867,7 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     /* convert descriptor string to its usual format */
                     char *descriptorClass = convertDescriptor(descriptor);
 
-                    /* get a string representation of the array */
+                    /* get a string representation of the object */
                     char *string = objectToString(self, (Object *) low);
 
                     /* allocate enough memory to store this string plus some extras */
@@ -890,13 +890,13 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
 
 /* 
  * Return <this> of the current method, or NULL if the method is static. Caller
- * must free the result.
+ * must free the result. As seen in interp/Interp.c --> dvmGetThisPtr()
  */
 char *getThis(Thread *self, const Method *method) {
     /* frame pointer */
     const u4 *frameptr = self->curFrame;
 
-    if (!dvmIsStaticMethod(method)) return(objectToString(self, (Object *) frameptr[0]));
+    if (!dvmIsStaticMethod(method)) return(objectToString(self, (Object* ) frameptr[method->registersSize - method->insSize]));
     return NULL;
 }
 
