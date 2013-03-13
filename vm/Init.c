@@ -996,7 +996,7 @@ static int dvmProcessOptions(int argc, const char* const argv[],
         } else if (strncmp(argv[i], "-uid:", 5) == 0) {
             gDvm.uid = atoi(argv[i]+5);
 
-        } else if (strcmp(argv[i], "-tracepath:/data/trace") == 0) {
+        } else if (strncmp(argv[i], "-tracepath:/data/trace", 22) == 0) {
             gDvm.tracepath = 1; // "/data/trace/"
 
         } else {
