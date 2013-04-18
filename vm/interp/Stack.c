@@ -518,13 +518,13 @@ void dvmCallMethodV(Thread* self, const Method* method, Object* obj,
     //dvmDumpThreadStack(dvmThreadSelf());
 
     if (dvmIsNativeMethod(method)) {
-        TRACE_METHOD_ENTER(self, method);
+        TRACE_METHOD_ENTER(self, method, TRACE_STACK, NULL);
         /*
          * Because we leave no space for local variables, "curFrame" points
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, pResult, method, self);
-        TRACE_METHOD_EXIT(self, method, pResult);
+        TRACE_METHOD_EXIT(self, method, TRACE_STACK, pResult);
     } else {
         dvmInterpret(self, method, pResult);
     }
@@ -622,13 +622,13 @@ void dvmCallMethodA(Thread* self, const Method* method, Object* obj,
 #endif
 
     if (dvmIsNativeMethod(method)) {
-        TRACE_METHOD_ENTER(self, method);
+        TRACE_METHOD_ENTER(self, method, TRACE_STACK, NULL);
         /*
          * Because we leave no space for local variables, "curFrame" points
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, pResult, method, self);
-        TRACE_METHOD_EXIT(self, method, pResult);
+        TRACE_METHOD_EXIT(self, method, TRACE_STACK, pResult);
     } else {
         dvmInterpret(self, method, pResult);
     }
@@ -731,13 +731,13 @@ Object* dvmInvokeMethod(Object* obj, const Method* method,
     //dvmDumpThreadStack(dvmThreadSelf());
 
     if (dvmIsNativeMethod(method)) {
-        TRACE_METHOD_ENTER(self, method);
+        TRACE_METHOD_ENTER(self, method, TRACE_STACK, NULL);
         /*
          * Because we leave no space for local variables, "curFrame" points
          * directly at the method arguments.
          */
         (*method->nativeFunc)(self->curFrame, &retval, method, self);
-        TRACE_METHOD_EXIT(self, method, &retval);
+        TRACE_METHOD_EXIT(self, method, TRACE_STACK, &retval);
     } else {
         dvmInterpret(self, method, &retval);
     }

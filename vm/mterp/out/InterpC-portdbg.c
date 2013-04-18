@@ -1409,7 +1409,7 @@ static void checkDebugAndProf(const u2* pc, const u4* fp, Thread* self,
     bool isEntry = *pIsMethodEntry;
     if (isEntry) {
         *pIsMethodEntry = false;
-        TRACE_METHOD_ENTER(self, method);
+        TRACE_METHOD_ENTER(self, method, TRACE_DEBUG, NULL);
     }
     if (gDvm.debuggerActive) {
         updateDebugger(method, pc, fp, isEntry, self);
@@ -3954,7 +3954,7 @@ GOTO_TARGET(returnFromMethod)
         debugSaveArea = saveArea;
 #endif
 #if (INTERP_TYPE == INTERP_DBG)
-        TRACE_METHOD_EXIT(self, curMethod, &retval);
+        TRACE_METHOD_EXIT(self, curMethod, TRACE_GOTO, &retval);
 #endif
 
         /* back up to previous frame and see if we hit a break */
@@ -4333,7 +4333,7 @@ GOTO_TARGET(invokeMethod, bool methodCallRange, const Method* _methodToCall,
             }
 #endif
 #if (INTERP_TYPE == INTERP_DBG)
-            TRACE_METHOD_ENTER(self, methodToCall);
+            TRACE_METHOD_ENTER(self, methodToCall, TRACE_GOTO, NULL);
 #endif
 
             {
@@ -4360,7 +4360,7 @@ GOTO_TARGET(invokeMethod, bool methodCallRange, const Method* _methodToCall,
             }
 #endif
 #if (INTERP_TYPE == INTERP_DBG)
-            TRACE_METHOD_EXIT(self, methodToCall, &retval);
+            TRACE_METHOD_EXIT(self, methodToCall, TRACE_GOTO, &retval);
 #endif
 
             /* pop frame off */

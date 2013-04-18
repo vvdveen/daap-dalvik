@@ -48,7 +48,7 @@ static void sigchldHandler(int s)
 {
     pid_t pid;
     int status;
-
+ 
     while ((pid = waitpid(-1, &status, WNOHANG)) > 0) {
         /* Log process-death status that we care about.  In general it is not
            safe to call LOG(...) from a signal handler because of possible

@@ -846,10 +846,16 @@ bool dvmPerformInlineOp4Dbg(u4 arg0, u4 arg1, u4 arg2, u4 arg3,
         }
     }
 
-    TRACE_METHOD_ENTER(self, method);
+    u4 *args = malloc(4 * sizeof(u4));
+    args[0] = arg0;
+    args[1] = arg1;
+    args[2] = arg2;
+    args[3] = arg3;
+
+    TRACE_METHOD_ENTER(self, method, TRACE_INLINE, args);
     result = (*gDvmInlineOpsTable[opIndex].func)(arg0, arg1, arg2, arg3,
                 pResult);
-    TRACE_METHOD_EXIT(self, method, pResult);
+    TRACE_METHOD_EXIT(self, method, TRACE_INLINE, pResult);
     return result;
 
 skip_prof:

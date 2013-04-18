@@ -137,6 +137,9 @@ static void dvmUsage(const char* progName)
     dvmFprintf(stderr, "  -Xjitprofile\n");
     dvmFprintf(stderr, "  -Xjitdisableopt\n");
 #endif
+    dvmFprintf(stderr, "  -uid:[UID]\n");
+    dvmFprintf(stderr, "  -tracepath:/data/trace\n");
+    dvmFprintf(stderr, "  -no-timestamp\n");
     dvmFprintf(stderr, "\n");
     dvmFprintf(stderr, "Configured with:"
         " debugger"
@@ -999,6 +1002,9 @@ static int dvmProcessOptions(int argc, const char* const argv[],
         } else if (strncmp(argv[i], "-tracepath:/data/trace", 22) == 0) {
             gDvm.tracepath = 1; // "/data/trace/"
 
+        } else if (strcmp(argv[i], "-no-timestamp") == 0) {
+            gDvm.timestamp = 0;
+
         } else {
             if (!ignoreUnrecognized) {
                 dvmFprintf(stderr, "Unrecognized option '%s'\n", argv[i]);
@@ -1076,6 +1082,7 @@ static void setCommandLineDefaults()
 
     gDvm.uid = -1;
     gDvm.tracepath = 0; // default to /sdcard/
+    gDvm.timestamp = 18; // strlen of a timestamp
 }
 
 

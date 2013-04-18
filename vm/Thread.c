@@ -1077,7 +1077,7 @@ static void freeThread(Thread* thread)
         return;
 
     if (thread->dump != NULL) {
-        LOGD("Closing method trace output file @ %p\n",thread->dump); 
+        LOGD("Closing method trace output file @ %p via freeThread()\n",thread->dump); 
         fclose(thread->dump);
     }
 
@@ -1746,6 +1746,11 @@ static void threadExitUncaughtException(Thread* self, Object* group)
     Object* handlerObj;
     Method* uncaughtHandler = NULL;
     InstField* threadHandler;
+
+    if (self->dump != NULL) {
+        LOGD("Closing method trace output file @ %p via threadExitUncaughtException()\n",self->dump); 
+        fclose(self->dump);
+    }
 
     LOGW("threadid=%d: thread exiting with uncaught exception (group=%p)\n",
         self->threadId, group);

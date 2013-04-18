@@ -506,7 +506,7 @@ void dvmMethodTraceStop(void)
     Thread *thread;
     for (thread = gDvm.threadList; thread != NULL; thread = thread->next) {
         if (thread->dump != NULL) {
-            LOGD("closing method trace output @ %p\n", thread->dump);
+            LOGD("closing method trace output @ %p via dvmMethodTraceStop()\n", thread->dump);
             fclose(thread->dump);
         }
     }
@@ -754,8 +754,8 @@ char *objectToString(Thread *self, Object *object) {
     if (str == NULL) return NULL;
 
     if (object == 0)               return strcpy(str,"null\0");
-    if (!dvmIsValidObject(object)) return strcpy(str,"\0");
-    if (dvmCheckException(self))   return strcpy(str,"\0"); /* exception pending */
+    if (!dvmIsValidObject(object)) return strcpy(str,"invalid\0");
+    if (dvmCheckException(self))   return strcpy(str,"except\0"); /* exception pending */
 
     /* Get the toString() method */
     Method *toString = object->clazz->vtable[gDvm.voffJavaLangObject_toString];
@@ -768,11 +768,11 @@ char *objectToString(Thread *self, Object *object) {
     /* This may result in an exception being thrown by buggy .toString() implementations, which we have to clear */
     if (dvmCheckException(self)) {
         dvmClearException(self);
-        return strcpy(str,"\0"); /* toString() failed */
+        return strcpy(str,"toString failed\0"); /* toString() failed */
     }
 
     /* <result.l> now contains a StringObject containing the toString() value of <object>. Convert it to a C string. */
-    if (result.l == 0) return strcpy(str,"\0");
+    if (result.l == 0) return strcpy(str,"l==0\0");
     char *string = dvmCreateCstrFromString(result.l);
     
     /* convert newlines and quotes */
@@ -791,7 +791,7 @@ char *objectToString(Thread *self, Object *object) {
 /* 
  * Given a method, get its modifiers. Caller must free the result.
  */
-char *getModifiers(const Method* method) {
+char *getModifiers(const Method* method, u4 *args) {
     char *modifiers = (char *) malloc(128 * sizeof(char));
     if (modifiers == NULL) return NULL;
 
@@ -805,6 +805,7 @@ char *getModifiers(const Method* method) {
     if (dvmIsPublicMethod      (method)) strcat(modifiers, "public "      );
     if (dvmIsStaticMethod      (method)) strcat(modifiers, "static "      );
     if (dvmIsSynchronizedMethod(method)) strcat(modifiers, "synchronized ");
+    if (args != NULL) strcat(modifiers, "inline ");
 
     return modifiers;
 }
@@ -892,46 +893,55 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
  * Return <this> of the current method, or NULL if the method is static. Caller
  * must free the result. As seen in interp/Interp.c --> dvmGetThisPtr()
  */
-char *getThis(Thread *self, const Method *method) {
-    /* frame pointer */
-    const u4 *frameptr = self->curFrame;
+char *getThis(Thread *self, const Method *method, u4 *args) {
 
-    if (!dvmIsStaticMethod(method)) return(objectToString(self, (Object* ) frameptr[method->registersSize - method->insSize]));
-    return NULL;
+    if (dvmIsStaticMethod(method)) return NULL;
+    if (args != NULL)              return objectToString(self, (Object *) args[0]);
+
+    u4 *frameptr = self->curFrame;
+    return objectToString(self, (Object* ) frameptr[method->registersSize - method->insSize]);
 }
 
 /*
  * Populate an string array of parameters by looping over the registers of the
  * current frame. Caller must free the result.
  */
-char **getParameters(Thread *self, const Method *method, int parameterCount) {
-
-    DexParameterIterator dpi;
-    dexParameterIteratorInit(&dpi, &method->prototype);
-
-    const char *shorty = dexProtoGetShorty(&method->prototype) + 1;
-      
-    /* frame pointer */
-    const u4 *frameptr = self->curFrame;
-    /* number of locals for this method */
-    int locals = method->registersSize - method->insSize;
+char **getParameters(Thread *self, const Method *method, int parameterCount, u4 *args) {
 
     /* string array that will contain the parameters */
     char **parameters = malloc(parameterCount * sizeof(char *));
     if (parameters == NULL) return NULL;
 
-    /* loop over registers and get a string representation of them. Skip the first register if this is a <this> reference */
-    int i, j;
-    for (i = locals + (dvmIsStaticMethod(method) ? 0 : 1), j = 0; i < method->registersSize; i++, j++) {
-        if (shorty[j] == 'J' || shorty[j] == 'D') {
-            /* 64 bit fields (longs and doubles) use two registers */
-            parameters[j] = parameterToString(self, dexParameterIteratorNextDescriptor(&dpi), frameptr[i], frameptr[i + 1]);
-            i++;
-        } else {
-            parameters[j] = parameterToString(self, dexParameterIteratorNextDescriptor(&dpi), frameptr[i], 0);
-        }
+    DexParameterIterator dpi;
+    dexParameterIteratorInit(&dpi, &method->prototype);
+
+    /* frame pointer */
+    const u4 *frameptr;
+    
+    /* number of locals for this method */
+    int locals;
+
+    /* populate frameptr and locals */
+    if (args == NULL) {
+        frameptr = self->curFrame;
+        locals   = method->registersSize - method->insSize;
+    } else {
+        /* arguments will be in args[0], args[1], args[2] and args[3] */
+        frameptr = args;
+        locals   = 0;
     }
 
+    /* loop over registers and get a string representation of them. Skip the first register if this is a <this> reference */
+    int i, j;
+    for (i = locals + (dvmIsStaticMethod(method) ? 0 : 1), j = 0; parameterCount > 0; parameterCount--, i++, j++) {
+        const char *descriptor = dexParameterIteratorNextDescriptor(&dpi);
+        parameters[j] = parameterToString(self, descriptor, frameptr[i], frameptr[i + 1]);
+
+        /* 64 bit fields (longs and doubles) use two registers. make sure we skip the next register */
+        if (descriptor[0] == 'J' || descriptor[0] == 'D')
+            i++;
+    }
+    
     return parameters;
 }
 
@@ -963,67 +973,59 @@ char *getParameterString(Thread *self, const Method *method, char **parameters, 
 }
 
 /*
- * Generate whitespace of <depth> characters long. Caller must free the result.
+ * Generate whitespace of <depth> characters long including timestamp (if necessary). Caller must free the result.
  */
 char *getWhitespace(int depth) {
-    char *whitespace = (char *) malloc((depth * sizeof(char)) + 1);
+    /* gDvm.timestamp will be either 0 or the number of characters "%llu: " will occupy */
+    char *whitespace = (char *) malloc((depth * sizeof(char)) + gDvm.timestamp + 1);
     if (whitespace == NULL) return NULL;
 
+    if (gDvm.timestamp) sprintf(whitespace, "%llu: ", getTimeInUsec());
+
     /* Fill the whitespace */
-    memset(whitespace, ' ', depth);
+    memset(whitespace + gDvm.timestamp, ' ', depth);
 
     /* Append \0 */
-    whitespace[depth] = 0;
+    whitespace[gDvm.timestamp + depth] = 0;
 
     return whitespace;
 }
 
-void handle_method(Thread *self, const Method *method, MethodTraceState *state) {
+void handle_method(Thread *self, const Method *method, MethodTraceState *state, int type, u4 *args) {
     int i;
 
     /* number of arguments for this method */
     int parameterCount = dexProtoGetParameterCount(&method->prototype);
 
     char *whitespace      = getWhitespace(self->depth);
-    char *modifiers       = getModifiers(method);
+    char *modifiers       = getModifiers(method, args);
     char *return_type     = convertDescriptor(dexProtoGetReturnType(&method->prototype));
     char *classDescriptor = convertDescriptor(method->clazz->descriptor);
-    char *this            = getThis(self, method);
-    char **parameters     = getParameters(self, method, parameterCount);
+    char *this            = getThis(self, method, args);
+    char **parameters     = getParameters(self, method, parameterCount, args);
     char *parameterString = getParameterString(self, method, parameters, parameterCount);
 
-/*    
-    LOGD_TRACE("Thread: %s\nCode located in %s\nCalled from %s\n",
-                dvmGetThreadName(self), 
-                method->clazz->pDvmDex->fileName, 
-                (dvmGetCallerClass(self->curFrame) == NULL) ? "unknown" : dvmGetCallerClass(self->curFrame)->pDvmDex->fileName);
-*/
+/* no need to lock mutex if we write to files */
+//  dvmLockMutex(&state->addLock);
 
-/*
-    char *filename;
-    if (dvmGetCallerClass(self->curFrame) != NULL) {
-        filename = dvmGetCallerClass(self->curFrame)->pDvmDex->fileName;
-    } else {
-        filename = "null";
-    }
-*/
-
-    dvmLockMutex(&state->addLock);
-    if (dvmIsConstructorMethod(method)){LOGD_TRACE("%llu: %snew %s(%s)\n",             getTimeInUsec(), whitespace,                         classDescriptor,                     parameterString); }
+    if (dvmIsConstructorMethod(method)){LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
-        if (this == NULL) {             LOGD_TRACE("%llu: %s%s%s %s.%s(%s)\n",         getTimeInUsec(), whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
-        else {                          LOGD_TRACE("%llu: %s%s%s %s(\"%s\").%s(%s)\n", getTimeInUsec(), whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
+        if (this == NULL) {             LOGD_TRACE("%s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
+        else {                          LOGD_TRACE("%s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
     }
-    dvmUnlockMutex(&state->addLock);
+
+//  dvmUnlockMutex(&state->addLock);
 
     free(whitespace);
     free(modifiers);
     free(return_type);
     if (this != NULL) free(this);
-    for (i = 0; i < parameterCount; i++) free(parameters[i]);
+    for (i = 0; i < parameterCount; i++)  free(parameters[i]); 
     free(parameters);
     free(parameterString);
     free(classDescriptor);
+
+    if (args != NULL) free(args);
 
 }
 
@@ -1036,7 +1038,7 @@ void handle_return(Thread *self, const Method *method, MethodTraceState *state, 
     char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
 
     dvmLockMutex(&state->addLock);
-    LOGD_TRACE("%llu: %sreturn %s\n", getTimeInUsec(), whitespace, returnString);
+    LOGD_TRACE("%sreturn %s\n", whitespace, returnString);
     dvmUnlockMutex(&state->addLock);
 
     free(whitespace);
@@ -1051,7 +1053,7 @@ void handle_throws(Thread *self, const Method *method, MethodTraceState *state, 
     else                             classDescriptor = convertDescriptor(  ((Object*) retval )->clazz->descriptor);
 
     dvmLockMutex(&state->addLock);
-    LOGD_TRACE("%llu: %sthrows %s\n", getTimeInUsec(), whitespace, classDescriptor);
+    LOGD_TRACE("%sthrows %s\n", whitespace, classDescriptor);
     dvmUnlockMutex(&state->addLock);
 
     free(whitespace);
@@ -1063,8 +1065,7 @@ void handle_throws(Thread *self, const Method *method, MethodTraceState *state, 
  * Multiple threads may be banging on this all at once. We use atomic ops
  * rather than mutexes for speed.
  */
-void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* retval)
-{
+void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type, void* options) {
     MethodTraceState* state = &gDvm.methodTrace;
     u4 clockDiff, methodVal;
     int oldOffset, newOffset;
@@ -1082,9 +1083,32 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
      * then probably have to increase the launch timeout to ensure packages can
      * still be started while logging with adb though.
      *
-     * This also removes any trace output from system threads (GC, Binder, HeapWorker, ...).
+     * This also removes trace output from system threads (GC, Binder, HeapWorker, ...).
      */
-    ClassObject *caller_clazz = dvmGetCallerClass(self->curFrame);
+
+    /* if inline function:
+            caller_clazz == _method->class
+        else
+            caller_clazz = dvmgetcallerclass(self->curframe);
+
+       if caller_clazz != NULL && caller_clazz->pDvm->isSystem && _method->clazz->pDvmDex->isSystem) bam     
+
+
+       */
+
+
+    ClassObject *caller_clazz ;
+
+    if (type == TRACE_INLINE) {
+        /* For inline functions, we must compare against the class descriptor found in the SAVEAREA. */
+        const StackSaveArea* saveArea = SAVEAREA_FROM_FP(self->curFrame);
+        caller_clazz = saveArea->method->clazz;
+    } else {
+        /* For all other invocations, we lookup the caller class of the method */
+        caller_clazz = dvmGetCallerClass(self->curFrame);
+    }
+
+    
     if ( caller_clazz != NULL &&
          caller_clazz->pDvmDex->isSystem && 
         method->clazz->pDvmDex->isSystem) {
@@ -1101,7 +1125,9 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
      *
      * This may be removed if we do not trace system jar code anyway.
      */
-    if (self->inMethodTraceAdd) return;
+    if (self->inMethodTraceAdd) {
+        return;
+    }
 
     /* We are now in dvmMethodTraceAdd() */
     self->inMethodTraceAdd = true;
@@ -1147,26 +1173,28 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, JValue* r
         /* We are entering a method... */
 
         char *whitespace = getWhitespace(self->depth);
-        handle_method(self, method, state);
+        handle_method(self, method, state, type, (u4 *) options);
         self->depth++;
         free(whitespace);
+
     } else if  (action == METHOD_TRACE_EXIT && !dvmCheckException(self)) {
         /* We are returning from a method... */
+
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
         char *whitespace = getWhitespace(self->depth);
-        handle_return(self, method, state, retval);
+        handle_return(self, method, state, (JValue *) options);
         free(whitespace);
+        
     } else if ((action == METHOD_TRACE_EXIT &&  dvmCheckException(self)) ||
                (action == METHOD_TRACE_UNROLL)) {
         /* We are unrolling... */
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
         char *whitespace = getWhitespace(self->depth);
-        handle_throws(self, method, state, retval, action);
+        handle_throws(self, method, state, (JValue *) options, action);
         free(whitespace);
 
     }
  
-
     /*
      * Write data into "oldOffset".
      */
@@ -1257,11 +1285,11 @@ void dvmEmitEmulatorTrace(const Method* method, int action)
  */
 void dvmMethodTraceGCBegin(void)
 {
-    TRACE_METHOD_ENTER(dvmThreadSelf(), gDvm.methodTrace.gcMethod);
+    TRACE_METHOD_ENTER(dvmThreadSelf(), gDvm.methodTrace.gcMethod, TRACE_PROFILE, NULL);
 }
 void dvmMethodTraceGCEnd(void)
 {
-    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.gcMethod, NULL);
+    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.gcMethod, TRACE_PROFILE, NULL);
 }
 
 /*
@@ -1269,11 +1297,11 @@ void dvmMethodTraceGCEnd(void)
  */
 void dvmMethodTraceClassPrepBegin(void)
 {
-    TRACE_METHOD_ENTER(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod);
+    TRACE_METHOD_ENTER(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod, TRACE_PROFILE, NULL);
 }
 void dvmMethodTraceClassPrepEnd(void)
 {
-    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod, NULL);
+    TRACE_METHOD_EXIT(dvmThreadSelf(), gDvm.methodTrace.classPrepMethod, TRACE_PROFILE, NULL);
 }
 
 

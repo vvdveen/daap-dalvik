@@ -220,7 +220,7 @@ static void checkDebugAndProf(const u2* pc, const u4* fp, Thread* self,
     bool isEntry = *pIsMethodEntry;
     if (isEntry) {
         *pIsMethodEntry = false;
-        TRACE_METHOD_ENTER(self, method);
+        TRACE_METHOD_ENTER(self, method, TRACE_DEBUG, NULL);
     }
     if (gDvm.debuggerActive) {
         updateDebugger(method, pc, fp, isEntry, self);

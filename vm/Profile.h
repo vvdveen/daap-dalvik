@@ -137,20 +137,20 @@ enum {
 /*
  * Call these when a method enters or exits.
  */
-#define TRACE_METHOD_ENTER(_self, _method)                                  \
+#define TRACE_METHOD_ENTER(_self, _method, _type, _args)                    \
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_ENTER, NULL); \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_ENTER, _type, _args); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_ENTER);          \
         }                                                                   \
     } while(0);
-#define TRACE_METHOD_EXIT(_self, _method, _retval)                          \
+#define TRACE_METHOD_EXIT(_self, _method, _type, _retval)                   \
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_EXIT, _retval); \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_EXIT, _type, _retval); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_EXIT);           \
         }                                                                   \
@@ -159,13 +159,19 @@ enum {
     do {                                                                    \
         if (gDvm.activeProfilers != 0) {                                    \
             if (gDvm.methodTrace.traceEnabled)                              \
-                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL, _exception); \
+                dvmMethodTraceAdd(_self, _method, METHOD_TRACE_UNROLL, 0, _exception); \
             if (gDvm.emulatorTraceEnableCount != 0)                         \
                 dvmEmitEmulatorTrace(_method, METHOD_TRACE_UNROLL);         \
         }                                                                   \
     } while(0);
 
-void dvmMethodTraceAdd(struct Thread* self, const Method* method, int action, JValue* retval);
+/* 
+   depending on the action, options is
+   - for TRACE_METHOD_EXIT  : a JValue *retval
+   - for TRACE_METHOD_ENTER : a u4 args[4] (if type == TRACE_INLINE)
+   - for TRACE_METHOD_UNROLL: NULL
+*/
+void dvmMethodTraceAdd(struct Thread* self, const Method* method, int action, int type, void* options);
 void dvmEmitEmulatorTrace(const Method* method, int action);
 
 void dvmMethodTraceGCBegin(void);
@@ -186,10 +192,14 @@ void dvmStopAllocCounting(void);
  * Enumeration for the two "action" bits.
  */
 enum {
-    METHOD_TRACE_ENTER = 0x00,      // method entry
-    METHOD_TRACE_EXIT = 0x01,       // method exit
-    METHOD_TRACE_UNROLL = 0x02,     // method exited by exception unrolling
-    // 0x03 currently unused
+    METHOD_TRACE_ENTER  = 0x00,    // method entry
+    METHOD_TRACE_EXIT   = 0x01,    // method exit
+    METHOD_TRACE_UNROLL = 0x02,    // method exited by exception unrolling
+    TRACE_INLINE  = 0x03, // via InlineNative.c
+    TRACE_STACK   = 0x04, // via interp/Stack.c
+    TRACE_GOTO    = 0x05, // via mterp/c/gotoTargets.c
+    TRACE_DEBUG   = 0x06, // via mterp/portable/debug.c
+    TRACE_PROFILE = 0x07, // via Profile.c
 };
 
 #define TOKEN_CHAR      '*'
