@@ -140,6 +140,8 @@ static void dvmUsage(const char* progName)
     dvmFprintf(stderr, "  -uid:[UID]\n");
     dvmFprintf(stderr, "  -tracepath:/data/trace\n");
     dvmFprintf(stderr, "  -no-timestamp\n");
+    dvmFprintf(stderr, "  -no-tostring\n");
+    dvmFprintf(stderr, "  -no-parameters\n");
     dvmFprintf(stderr, "\n");
     dvmFprintf(stderr, "Configured with:"
         " debugger"
@@ -1005,6 +1007,12 @@ static int dvmProcessOptions(int argc, const char* const argv[],
         } else if (strcmp(argv[i], "-no-timestamp") == 0) {
             gDvm.timestamp = 0;
 
+        } else if (strcmp(argv[i], "-no-tostring") == 0) {
+            gDvm.tostring = false;
+
+        } else if (strcmp(argv[i], "-no-parameters") == 0) {
+            gDvm.parameters = false;
+
         } else {
             if (!ignoreUnrecognized) {
                 dvmFprintf(stderr, "Unrecognized option '%s'\n", argv[i]);
@@ -1083,6 +1091,8 @@ static void setCommandLineDefaults()
     gDvm.uid = -1;
     gDvm.tracepath = 0; // default to /sdcard/
     gDvm.timestamp = 18; // strlen of a timestamp
+    gDvm.tostring = true;
+    gDvm.parameters = true;
 }
 
 
@@ -1460,7 +1470,7 @@ bool dvmInitAfterZygote(void)
         if (uid_file != NULL)
             fscanf(uid_file,"%d",&gDvm.uid);
     }
-
+    
     if (gDvm.uid == -1) return true;
 
     if ((unsigned int)gDvm.uid == getuid()) {

@@ -1079,6 +1079,7 @@ static void freeThread(Thread* thread)
     if (thread->dump != NULL) {
         LOGD("Closing method trace output file @ %p via freeThread()\n",thread->dump); 
         fclose(thread->dump);
+        thread->dump = NULL;
     }
 
     /* thread->threadId is zero at this point */
@@ -1750,6 +1751,7 @@ static void threadExitUncaughtException(Thread* self, Object* group)
     if (self->dump != NULL) {
         LOGD("Closing method trace output file @ %p via threadExitUncaughtException()\n",self->dump); 
         fclose(self->dump);
+        self->dump = NULL;
     }
 
     LOGW("threadid=%d: thread exiting with uncaught exception (group=%p)\n",

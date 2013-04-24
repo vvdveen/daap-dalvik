@@ -81,6 +81,8 @@ struct DvmGlobals {
     int uid;               // uid of app that should be traced
     int tracepath;         // 0 for "/sdcard/", 1 for "/data/trace"
     int timestamp;         // 0 for no-timestamp, strlen( "<timestamp>: " ) == 18 otherwise
+    bool tostring;
+    bool parameters;
 
     bool        verboseGc;
     bool        verboseJni;

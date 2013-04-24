@@ -35,6 +35,9 @@
 # define UPDATE_MAGIC_PAGE      1
 #endif
 
+#define DMTRACE_ENABLED 0
+#define LOGD_TRACE_ENABLED 1
+
 /*
  * File format:
  *  header
@@ -508,6 +511,7 @@ void dvmMethodTraceStop(void)
         if (thread->dump != NULL) {
             LOGD("closing method trace output @ %p via dvmMethodTraceStop()\n", thread->dump);
             fclose(thread->dump);
+            thread->dump = NULL;
         }
     }
 
@@ -683,7 +687,7 @@ void prep_log() {
     char    filename[64];
     if (gDvm.tracepath == 0) sprintf(filename,"%s.%d.%d","/sdcard/dump"    ,getpid(),self->systemTid);
     else                     sprintf(filename,"%s.%d.%d","/data/trace/dump",getpid(),self->systemTid);
-    self->dump = fopen(filename,"w");
+    self->dump = fopen(filename,"a");
     LOGD("Method trace output file %s is open @ %p\n",filename,self->dump);
 }
 
@@ -752,6 +756,11 @@ char *convertDescriptor(const char *descriptor) {
 char *objectToString(Thread *self, Object *object) {
     char *str = (char *) malloc(128 * sizeof(char));
     if (str == NULL) return NULL;
+
+    if (!gDvm.tostring) {
+        sprintf(str,"%p",object);
+        return str;
+    }
 
     if (object == 0)               return strcpy(str,"null\0");
     if (!dvmIsValidObject(object)) return strcpy(str,"invalid\0");
@@ -996,6 +1005,7 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state, 
 
     /* number of arguments for this method */
     int parameterCount = dexProtoGetParameterCount(&method->prototype);
+    if (!gDvm.parameters) parameterCount = 0;
 
     char *whitespace      = getWhitespace(self->depth);
     char *modifiers       = getModifiers(method, args);
@@ -1005,16 +1015,18 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state, 
     char **parameters     = getParameters(self, method, parameterCount, args);
     char *parameterString = getParameterString(self, method, parameters, parameterCount);
 
-/* no need to lock mutex if we write to files */
-//  dvmLockMutex(&state->addLock);
 
+#if LOGD_TRACE_ENABLED
+    /* no need to lock mutex if we write to files */
+//  dvmLockMutex(&state->addLock);
     if (dvmIsConstructorMethod(method)){LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
         if (this == NULL) {             LOGD_TRACE("%s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
         else {                          LOGD_TRACE("%s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
     }
-
 //  dvmUnlockMutex(&state->addLock);
+#endif
+
 
     free(whitespace);
     free(modifiers);
@@ -1037,9 +1049,11 @@ void handle_return(Thread *self, const Method *method, MethodTraceState *state, 
     u4 high = (retval == 0) ? 0 : (u4) (*((u8*)retval) >> 32);
     char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
 
-    dvmLockMutex(&state->addLock);
+#if LOGD_TRACE_ENABLED
+//  dvmLockMutex(&state->addLock);
     LOGD_TRACE("%sreturn %s\n", whitespace, returnString);
-    dvmUnlockMutex(&state->addLock);
+//  dvmUnlockMutex(&state->addLock);
+#endif
 
     free(whitespace);
     free(returnString);
@@ -1052,9 +1066,11 @@ void handle_throws(Thread *self, const Method *method, MethodTraceState *state, 
     if (action == METHOD_TRACE_EXIT) classDescriptor = convertDescriptor(dvmGetException(self)->clazz->descriptor);
     else                             classDescriptor = convertDescriptor(  ((Object*) retval )->clazz->descriptor);
 
-    dvmLockMutex(&state->addLock);
+#if LOGD_TRACE_ENABLED
+//  dvmLockMutex(&state->addLock);
     LOGD_TRACE("%sthrows %s\n", whitespace, classDescriptor);
-    dvmUnlockMutex(&state->addLock);
+//  dvmUnlockMutex(&state->addLock);
+#endif
 
     free(whitespace);
     free(classDescriptor);
@@ -1067,10 +1083,12 @@ void handle_throws(Thread *self, const Method *method, MethodTraceState *state, 
  */
 void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type, void* options) {
     MethodTraceState* state = &gDvm.methodTrace;
+#if DMTRACE_ENABLED
     u4 clockDiff, methodVal;
     int oldOffset, newOffset;
     u1* ptr;
-    
+#endif
+
     if (method == NULL) {
         /* Not sure what's going on, but we better not try. */
         return;
@@ -1086,17 +1104,6 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
      * This also removes trace output from system threads (GC, Binder, HeapWorker, ...).
      */
 
-    /* if inline function:
-            caller_clazz == _method->class
-        else
-            caller_clazz = dvmgetcallerclass(self->curframe);
-
-       if caller_clazz != NULL && caller_clazz->pDvm->isSystem && _method->clazz->pDvmDex->isSystem) bam     
-
-
-       */
-
-
     ClassObject *caller_clazz ;
 
     if (type == TRACE_INLINE) {
@@ -1108,7 +1115,6 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
         caller_clazz = dvmGetCallerClass(self->curFrame);
     }
 
-    
     if ( caller_clazz != NULL &&
          caller_clazz->pDvmDex->isSystem && 
         method->clazz->pDvmDex->isSystem) {
@@ -1132,6 +1138,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
     /* We are now in dvmMethodTraceAdd() */
     self->inMethodTraceAdd = true;
 
+#if DMTRACE_ENABLED
     /*
      * We can only access the per-thread CPU clock from within the
      * thread, so we have to initialize the base time on the first use.
@@ -1167,8 +1174,8 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
     clockDiff = (u4) (now - self->cpuClockBase);
 
     methodVal = METHOD_COMBINE((u4) method, action);
-
-
+#endif
+    
     if (action == METHOD_TRACE_ENTER) {
         /* We are entering a method... */
 
@@ -1194,7 +1201,11 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
         free(whitespace);
 
     }
- 
+   
+    /* We are leaving dvmMethodTraceAdd(). */
+    self->inMethodTraceAdd = false;
+
+#if DMTRACE_ENABLED
     /*
      * Write data into "oldOffset".
      */
@@ -1208,9 +1219,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
     *ptr++ = (u1) (clockDiff >> 8);
     *ptr++ = (u1) (clockDiff >> 16);
     *ptr++ = (u1) (clockDiff >> 24);
-   
-    /* We are leaving dvmMethodTraceAdd(). */
-    self->inMethodTraceAdd = false;
+#endif
 }
 
 /*
