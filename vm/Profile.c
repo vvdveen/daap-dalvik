@@ -1002,27 +1002,30 @@ char *getWhitespace(int depth) {
 
 void handle_method(Thread *self, const Method *method, MethodTraceState *state, int type, u4 *args) {
     int i;
+    bool isConstructor = false;
+    if (dvmIsConstructorMethod(method)) isConstructor = true;
 
     /* number of arguments for this method */
     int parameterCount = dexProtoGetParameterCount(&method->prototype);
     if (!gDvm.parameters) parameterCount = 0;
 
-    char *whitespace      = getWhitespace(self->depth);
-    char *modifiers       = getModifiers(method, args);
-    char *return_type     = convertDescriptor(dexProtoGetReturnType(&method->prototype));
-    char *classDescriptor = convertDescriptor(method->clazz->descriptor);
-    char *this            = getThis(self, method, args);
-    char **parameters     = getParameters(self, method, parameterCount, args);
-    char *parameterString = getParameterString(self, method, parameters, parameterCount);
+    char *whitespace         = getWhitespace(self->depth);
+    char *modifiers          = getModifiers(method, args);
+    char *return_type        = convertDescriptor(dexProtoGetReturnType(&method->prototype));
+    char *classDescriptor    = convertDescriptor(method->clazz->descriptor);
+    char *this               = NULL;
+    if (!isConstructor) this = getThis(self, method, args);
+    char **parameters        = getParameters(self, method, parameterCount, args);
+    char *parameterString    = getParameterString(self, method, parameters, parameterCount);
 
 
 #if LOGD_TRACE_ENABLED
     /* no need to lock mutex if we write to files */
 //  dvmLockMutex(&state->addLock);
-    if (dvmIsConstructorMethod(method)){LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
+    if (isConstructor){     LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
-        if (this == NULL) {             LOGD_TRACE("%s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
-        else {                          LOGD_TRACE("%s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
+        if (this == NULL) { LOGD_TRACE("%s%s%s %s.%s(%s)\n",         whitespace, modifiers, return_type, classDescriptor,       method->name, parameterString); }
+        else {              LOGD_TRACE("%s%s%s %s(\"%s\").%s(%s)\n", whitespace, modifiers, return_type, classDescriptor, this, method->name, parameterString); }
     }
 //  dvmUnlockMutex(&state->addLock);
 #endif
