@@ -1119,7 +1119,9 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
     }
 
     if ( caller_clazz != NULL &&
-         caller_clazz->pDvmDex->isSystem && 
+         caller_clazz->pDvmDex != NULL   &&
+         caller_clazz->pDvmDex->isSystem &&
+        method->clazz->pDvmDex != NULL   &&
         method->clazz->pDvmDex->isSystem) {
         /* We are currently executing bytecode from a system jar, while the
          * bytecode that called the current method is also from a system jar.
