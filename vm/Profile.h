@@ -32,8 +32,16 @@
 /* A different log tag for trace output so that we can filter it */
 #define TRACE_LOG_TAG      LOG_TAG "-trace"
 /* Switch these defines to dump output to logcat */
-#define LOGX_TRACE(...)    LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__)
-#define LOGD_TRACE(...)    { if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); }
+
+/* use startStopLock mutex to avoid race conditions:
+   - function x is being traced and LOGD_TRACE() is called
+   - self->dump != NULL
+   - am profile stop is executed
+   - self->dump will be closed and becomes NULL
+   - switch back to function x being traced, and fprintf() will crash the VM
+ */
+#define LOGX_TRACE(...)    { dvmLockMutex(&state->startStopLock); LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__); dvmUnlockMutex(&state->startStopLock); }
+#define LOGD_TRACE(...)    { dvmLockMutex(&state->startStopLock); if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); dvmUnlockMutex(&state->startStopLock); }
 /* prep_log() is defined in Profile.c */
 
 
@@ -55,7 +63,6 @@ typedef struct MethodTraceState {
 
     /* active state */
     pthread_mutex_t startStopLock;
-    pthread_mutex_t addLock;
     pthread_cond_t  lockExitCond;
     pthread_cond_t  threadExitCond;
     FILE*   traceFile;
