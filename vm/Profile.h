@@ -40,8 +40,14 @@
    - self->dump will be closed and becomes NULL
    - switch back to function x being traced, and fprintf() will crash the VM
  */
-#define LOGX_TRACE(...)    { dvmLockMutex(&state->startStopLock); LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__); dvmUnlockMutex(&state->startStopLock); }
-#define LOGD_TRACE(...)    { dvmLockMutex(&state->startStopLock); if (!self->dump) prep_log(); fprintf(self->dump,__VA_ARGS__); dvmUnlockMutex(&state->startStopLock); }
+#define LOGX_TRACE(...)    { dvmLockMutex(&state->fwriteLock); LOG(LOG_DEBUG, TRACE_LOG_TAG, __VA_ARGS__); dvmUnlockMutex(&state->fwriteLock); }
+#define LOGD_TRACE(...)                                             \
+    do {                                                            \
+        dvmLockMutex(&state->fwriteLock);                           \
+        if (self->dump)          fprintf(self->dump, __VA_ARGS__);  \
+        else if (prep_log(self)) fprintf(self->dump, __VA_ARGS__);  \
+        dvmUnlockMutex(&state->fwriteLock);                         \
+    } while (0);                                                    \
 /* prep_log() is defined in Profile.c */
 
 
@@ -63,6 +69,7 @@ typedef struct MethodTraceState {
 
     /* active state */
     pthread_mutex_t startStopLock;
+    pthread_mutex_t fwriteLock;
     pthread_cond_t  lockExitCond;
     pthread_cond_t  threadExitCond;
     FILE*   traceFile;

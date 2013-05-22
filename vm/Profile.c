@@ -505,15 +505,6 @@ void dvmMethodTraceStop(void)
      */
     dvmLockMutex(&state->startStopLock);
 
-    Thread *thread;
-    for (thread = gDvm.threadList; thread != NULL; thread = thread->next) {
-        if (thread->dump != NULL) {
-            LOGD("closing method trace output @ %p via dvmMethodTraceStop()\n", thread->dump);
-            fclose(thread->dump);
-            thread->dump = NULL;
-        }
-    }
-
     if (!state->traceEnabled) {
         /* somebody already stopped it, or it was never started */
         LOGD("TRACE stop requested, but not running\n");
@@ -526,6 +517,15 @@ void dvmMethodTraceStop(void)
     /* compute elapsed time */
     elapsed = getTimeInUsec() - state->startWhen;
 
+    dvmLockMutex(&state->fwriteLock);
+    Thread *thread;
+    for (thread = gDvm.threadList; thread != NULL; thread = thread->next) {
+        if (thread->dump != NULL) {
+            LOGD("closing method trace output @ %p via dvmMethodTraceStop()\n", thread->dump);
+            fclose(thread->dump);
+            thread->dump = NULL;
+        }
+    }
     /*
      * Globally disable it, and allow other threads to notice.  We want
      * to stall here for at least as long as dvmMethodTraceAdd needs
@@ -534,6 +534,8 @@ void dvmMethodTraceStop(void)
      * after that completes.
      */
     state->traceEnabled = false;
+    dvmUnlockMutex(&state->fwriteLock);
+
     ANDROID_MEMBAR_FULL();
     sched_yield();
     usleep(250 * 1000);
@@ -681,13 +683,15 @@ void dvmMethodTraceStop(void)
 /*
  * Open a dump.<TID> file for dumping the method trace into.
  */
-void prep_log() {
-    Thread *self = dvmThreadSelf();
-    char    filename[64];
+bool prep_log(Thread *self) {
+    if (!gDvm.methodTrace.traceEnabled) return false;
+
+    char filename[64];
     if (gDvm.tracepath == 0) sprintf(filename,"%s.%d.%d","/sdcard/dump"    ,getpid(),self->systemTid);
     else                     sprintf(filename,"%s.%d.%d","/data/trace/dump",getpid(),self->systemTid);
     self->dump = fopen(filename,"a");
     LOGD("Method trace output file %s is open @ %p\n",filename,self->dump);
+    return true;
 }
 
 

@@ -1076,11 +1076,14 @@ static void freeThread(Thread* thread)
     if (thread == NULL)
         return;
 
-    if (thread->dump != NULL) {
-        LOGD("closing method trace output file @ %p via freeThread()\n",thread->dump); 
+    MethodTraceState* state = &gDvm.methodTrace;
+    dvmLockMutex(&state->fwriteLock);
+    if (thread->dump) {
+        LOGD("closing method trace output @ %p via freeThread()\n",thread->dump); 
         fclose(thread->dump);
         thread->dump = NULL;
     }
+    dvmUnlockMutex(&state->fwriteLock);
 
     /* thread->threadId is zero at this point */
     LOGVV("threadid=%d: freeing\n", thread->threadId);
@@ -1749,16 +1752,16 @@ static void threadExitUncaughtException(Thread* self, Object* group)
     InstField* threadHandler;
     
     MethodTraceState* state = &gDvm.methodTrace;
-    dvmLockMutex(&state->startStopLock);
+    dvmLockMutex(&state->fwriteLock);
     Thread *thread;
     for (thread = gDvm.threadList; thread != NULL; thread = thread->next) {
-        if (thread->dump != NULL) {
+        if (thread->dump) {
             LOGD("closing method trace output @ %p via threadExitUncaughtException()\n", thread->dump);
             fclose(thread->dump);
             thread->dump = NULL;
         }
     }
-    dvmUnlockMutex(&state->startStopLock);
+    dvmUnlockMutex(&state->fwriteLock);
 
     LOGW("threadid=%d: thread exiting with uncaught exception (group=%p)\n",
         self->threadId, group);
