@@ -690,6 +690,11 @@ bool prep_log(Thread *self) {
     if (gDvm.tracepath == 0) sprintf(filename,"%s.%d.%d","/sdcard/dump"    ,getpid(),self->systemTid);
     else                     sprintf(filename,"%s.%d.%d","/data/trace/dump",getpid(),self->systemTid);
     self->dump = fopen(filename,"a");
+    if (self->dump == NULL) {
+        int err = errno;
+        LOGD("Could not open method trace output for %s: %s\n", filename, strerror(err));
+        return false;
+    }
     LOGD("Method trace output file %s is open @ %p\n",filename,self->dump);
     return true;
 }
