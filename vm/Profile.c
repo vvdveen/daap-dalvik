@@ -1186,26 +1186,20 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
     if (action == METHOD_TRACE_ENTER) {
         /* We are entering a method... */
 
-        char *whitespace = getWhitespace(self->depth);
         handle_method(self, method, state, type, (u4 *) options);
         self->depth++;
-        free(whitespace);
 
     } else if  (action == METHOD_TRACE_EXIT && !dvmCheckException(self)) {
         /* We are returning from a method... */
 
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
-        char *whitespace = getWhitespace(self->depth);
         handle_return(self, method, state, (JValue *) options);
-        free(whitespace);
         
     } else if ((action == METHOD_TRACE_EXIT &&  dvmCheckException(self)) ||
                (action == METHOD_TRACE_UNROLL)) {
         /* We are unrolling... */
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
-        char *whitespace = getWhitespace(self->depth);
         handle_throws(self, method, state, (JValue *) options, action);
-        free(whitespace);
 
     }
    
