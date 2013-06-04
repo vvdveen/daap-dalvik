@@ -66,7 +66,6 @@
 
 #define FILL_PATTERN        0xeeeeeeee
 
-
 /*
  * Get the wall-clock date/time, in usec.
  */
@@ -721,16 +720,16 @@ char *convertDescriptor(const char *descriptor) {
             case 'I': { sprintf(class_descriptor, "int"    ); break; }
             case 'F': { sprintf(class_descriptor, "float"  ); break; }
             case 'J': { sprintf(class_descriptor, "long"   ); break; }
-            case 'D': { sprintf(class_descriptor, "double" ); break; } 
-            case 'C': { sprintf(class_descriptor, "char"   ); break; } 
+            case 'D': { sprintf(class_descriptor, "double" ); break; }
+            case 'C': { sprintf(class_descriptor, "char"   ); break; }
         }
         return class_descriptor;
     }
-    
+
     if (*descriptor == '[') {
         /* recursion! */
         char *rest = convertDescriptor(descriptor + 1);
-        
+
         /* allocate enough space for <rest> plus 3: ....[]\0 */
         len = strlen(rest) + 3;
         char *class_descriptor = (char *) malloc(sizeof(char) * len);
@@ -750,14 +749,14 @@ char *convertDescriptor(const char *descriptor) {
     for (dst = class_descriptor, src = descriptor + 1; *src != 0; src++, dst++) {
         if (*src == '/') *dst = '.';
         else             *dst = *src;
-    }   
+    }
     class_descriptor[len-2] = 0;
 
     return class_descriptor;
 }
 
 
-/* 
+/*
  * Given an object, call its .toString() function and return this as a C
  * string. Caller must free the result.
  */
@@ -778,7 +777,7 @@ char *objectToString(Thread *self, Object *object) {
     Method *toString = object->clazz->vtable[gDvm.voffJavaLangObject_toString];
     assert(dvmCompareNameDescriptorAndMethod("toString", "()Ljava/lang/String", toString) == 0);
 
-    /* Execute the toString() method */    
+    /* Execute the toString() method */
     JValue result;
     dvmCallMethod(self, toString, object, &result);
 
@@ -791,7 +790,7 @@ char *objectToString(Thread *self, Object *object) {
     /* <result.l> now contains a StringObject containing the toString() value of <object>. Convert it to a C string. */
     if (result.l == 0) return strcpy(str,"l==0\0");
     char *string = dvmCreateCstrFromString(result.l);
-    
+
     /* convert newlines and quotes */
     char *p;
     for (p = string; *p; p++) {
@@ -805,7 +804,7 @@ char *objectToString(Thread *self, Object *object) {
     return string;
 }
 
-/* 
+/*
  * Given a method, get its modifiers. Caller must free the result.
  */
 char *getModifiers(const Method* method, u4 *args) {
@@ -818,7 +817,7 @@ char *getModifiers(const Method* method, u4 *args) {
     if (dvmIsFinalMethod       (method)) strcat(modifiers, "final "       );
     if (dvmIsNativeMethod      (method)) strcat(modifiers, "native "      );
     if (dvmIsPrivateMethod     (method)) strcat(modifiers, "private "     );
-    if (dvmIsProtectedMethod   (method)) strcat(modifiers, "protected "   ); 
+    if (dvmIsProtectedMethod   (method)) strcat(modifiers, "protected "   );
     if (dvmIsPublicMethod      (method)) strcat(modifiers, "public "      );
     if (dvmIsStaticMethod      (method)) strcat(modifiers, "static "      );
     if (dvmIsSynchronizedMethod(method)) strcat(modifiers, "synchronized ");
@@ -836,22 +835,22 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
     if (result == NULL) return NULL;
 
     memset(result, 0, 128);
-    
+
     switch (descriptor[0]) {
         case 'Z': { if ((bool)low) sprintf(result, "(boolean) \"true\"");
                     else           sprintf(result, "(boolean) \"false\"");  break; }
-                    
+
         case 'B': { sprintf(result, "(byte) \"%hhd\"", (s1) low);    break; }
         case 'S': { sprintf(result, "(short) \"%hd\"", (s2) low);    break; }
         case 'I': { sprintf(result, "(int) \"%d\"",    (s4) low);    break; }
         case 'F': { sprintf(result, "(float) \"%f\"",  (float) low); break; }
-                  
+
         case 'J': { sprintf(result, "(long) \"%lld\"",           ((s8)high << (s8)32L) | (s8)low); break; }
         case 'D': { sprintf(result, "(double) \"%f\"", (double) (((u8)high << (u8)32L) | (u8)low)); break; }
-  
+
         case 'V': { sprintf(result, "(void)"); break; }
 
-        case 'C': { 
+        case 'C': {
                     /* dvmConvertUtf16ToUtf8() expects a string */
                     u2 str = (u2) low;
 
@@ -898,15 +897,15 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     free(descriptorClass);
 
                     /* free the string representation, as we copied it into the result string */
-                    free(string); 
+                    free(string);
 
-                    break; 
+                    break;
                   }
     }
     return result;
 }
 
-/* 
+/*
  * Return <this> of the current method, or NULL if the method is static. Caller
  * must free the result. As seen in interp/Interp.c --> dvmGetThisPtr()
  */
@@ -934,7 +933,7 @@ char **getParameters(Thread *self, const Method *method, int parameterCount, u4 
 
     /* frame pointer */
     const u4 *frameptr;
-    
+
     /* number of locals for this method */
     int locals;
 
@@ -958,7 +957,7 @@ char **getParameters(Thread *self, const Method *method, int parameterCount, u4 
         if (descriptor[0] == 'J' || descriptor[0] == 'D')
             i++;
     }
-    
+
     return parameters;
 }
 
@@ -1026,7 +1025,6 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state, 
     char **parameters        = getParameters(self, method, parameterCount, args);
     char *parameterString    = getParameterString(self, method, parameters, parameterCount);
 
-
 #if LOGD_TRACE_ENABLED
     if (isConstructor){     LOGD_TRACE("%snew %s(%s)\n",             whitespace,                         classDescriptor,                     parameterString); }
     else {
@@ -1035,12 +1033,11 @@ void handle_method(Thread *self, const Method *method, MethodTraceState *state, 
     }
 #endif
 
-
     free(whitespace);
     free(modifiers);
     free(return_type);
     if (this != NULL) free(this);
-    for (i = 0; i < parameterCount; i++)  free(parameters[i]); 
+    for (i = 0; i < parameterCount; i++)  free(parameters[i]);
     free(parameters);
     free(parameterString);
     free(classDescriptor);
@@ -1129,7 +1126,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
          * This is not interesting for us.
          */
 /*      LOGD_TRACE("pDvmDex->filename: %s\n",caller_clazz->pDvmDex->fileName); */
-        return; 
+        return;
     }
 
     /* Only enter if we did not enter earlier to avoid inception. This happens
@@ -1167,7 +1164,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
         newOffset = oldOffset + TRACE_REC_SIZE;
         if (newOffset > state->bufferSize) {
             state->overflow = true;
- 
+
             /* We are leaving dvmMethodTraceAdd(). */
             self->inMethodTraceAdd = false;
             return;
@@ -1182,7 +1179,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
 
     methodVal = METHOD_COMBINE((u4) method, action);
 #else
-    
+
     if (action == METHOD_TRACE_ENTER) {
         /* We are entering a method... */
 
@@ -1194,7 +1191,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
 
         self->depth = (self->depth == 0 ? 0 : self->depth-1);
         handle_return(self, method, state, (JValue *) options);
-        
+
     } else if ((action == METHOD_TRACE_EXIT &&  dvmCheckException(self)) ||
                (action == METHOD_TRACE_UNROLL)) {
         /* We are unrolling... */
@@ -1202,7 +1199,7 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
         handle_throws(self, method, state, (JValue *) options, action);
 
     }
-   
+
     /* We are leaving dvmMethodTraceAdd(). */
     self->inMethodTraceAdd = false;
 #endif
