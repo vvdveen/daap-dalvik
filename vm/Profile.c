@@ -846,7 +846,18 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
         case 'F': { sprintf(result, "(float) \"%f\"",  (float) low); break; }
 
         case 'J': { sprintf(result, "(long) \"%lld\"",           ((s8)high << (s8)32L) | (s8)low); break; }
-        case 'D': { sprintf(result, "(double) \"%f\"", (double) (((u8)high << (u8)32L) | (u8)low)); break; }
+        case 'D': { 
+                    double d;
+                    /* By converting the double to a char pointer, we can jump
+                     * to an offset within the double. We can then easily
+                     * memcpy the low and high values.
+                     */
+                    memcpy( ((char *)&d)+0, &low,  sizeof(low)  );
+                    memcpy( ((char *)&d)+4, &high, sizeof(high) );
+
+                    sprintf(result, "(double) \"%f\"", (double) d); 
+                    break; 
+                  }
 
         case 'V': { sprintf(result, "(void)"); break; }
 
