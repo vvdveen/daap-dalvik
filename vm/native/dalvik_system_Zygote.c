@@ -163,9 +163,6 @@ static int setgroupsIntarray(ArrayObject* gidArray)
     s4 *contents;
 
     if (gidArray == NULL) {
-        /* add the WRITE_EXTERNAL_STORAGE group */
-/*      gids = alloca(sizeof(gid_t));
-        gids[0] = (gid_t) 1015;  */
         return 0;
     } 
     /* 
@@ -180,7 +177,6 @@ static int setgroupsIntarray(ArrayObject* gidArray)
         gids[i] = (gid_t) contents[i];
     }
     gids[i] = 1015; 
-    
 
     return setgroups((size_t) gidArray->length + 1, gids);
 }

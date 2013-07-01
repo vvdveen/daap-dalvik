@@ -1396,7 +1396,8 @@ static bool dvmInitZygote(void)
     setpgid(0,0);
 
     /*
-     * give sd-card write permissions
+     * Give sd-card write permissions. Apps that do not request any
+     * permissions, will copy the permissions set here.
      */
     gid_t list[1024];
     int groups = getgroups(1024, list);
