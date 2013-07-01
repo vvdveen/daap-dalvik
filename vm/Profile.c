@@ -845,7 +845,14 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
         case 'I': { sprintf(result, "(int) \"%d\"",    (s4) low);    break; }
         case 'F': { sprintf(result, "(float) \"%f\"",  (float) low); break; }
 
-        case 'J': { sprintf(result, "(long) \"%lld\"",           ((s8)high << (s8)32L) | (s8)low); break; }
+        case 'J': { 
+                    long long int l;
+                    memcpy( ((char *)&l)+0, &low,  sizeof(low)  );
+                    memcpy( ((char *)&l)+4, &high, sizeof(high) );
+
+                    sprintf(result, "(long) \"%lld\"", l); 
+                    break; 
+                  }
         case 'D': { 
                     double d;
                     /* By converting the double to a char pointer, we can jump
@@ -855,7 +862,7 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     memcpy( ((char *)&d)+0, &low,  sizeof(low)  );
                     memcpy( ((char *)&d)+4, &high, sizeof(high) );
 
-                    sprintf(result, "(double) \"%f\"", (double) d); 
+                    sprintf(result, "(double) \"%f\"", d); 
                     break; 
                   }
 
