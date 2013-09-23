@@ -1144,7 +1144,32 @@ void dvmMethodTraceAdd(Thread* self, const Method* method, int action, int type,
          * This is not interesting for us.
          */
 /*      LOGD_TRACE("pDvmDex->filename: %s\n",caller_clazz->pDvmDex->fileName); */
-        return;
+
+        const Method *caller_method = dvmGetCallerMethod(self->curFrame);
+
+        /* java.lang.reflect.Method.invoke() is an exception, we'll trace these
+         * calls always.
+         *
+         * We probably want to trace the creation of new class instances
+         * as well (java.lang.reflect.Constructor.newInstance()), and maybe
+         * even more. Have to figure out how to do this exactly (TODO).
+         */
+        if ( !(strcmp(caller_clazz->descriptor,"Ljava/lang/reflect/Method;") == 0 &&
+               strcmp(caller_method->name,"invoke") == 0) ) {
+           return;
+        }
+    }
+
+    /* Hide calls to java.lang.reflect.Method.invoke() and
+     * java.lang.reflect.Method.invokeNative() which is called by invoke(). We
+     * already print the final method invocation.
+     *
+     * We probably want to hide more java.lang.reflect.* code (TODO).
+     */
+    if (  strcmp(method->clazz->descriptor,"Ljava/lang/reflect/Method;") == 0 &&
+          ( strcmp(method->name,"invoke")       == 0 ||
+            strcmp(method->name,"invokeNative") == 0)) {
+          return;
     }
 
     /* Only enter if we did not enter earlier to avoid inception. This happens
