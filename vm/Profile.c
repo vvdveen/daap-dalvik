@@ -830,27 +830,41 @@ char *getModifiers(const Method* method, u4 *args) {
  * Given a parameter (low/high) and its descriptor, get its string
  * representation ( "(<type>) <value>" ). Caller must free the result.
  */
-char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
+char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high, bool showtype) {
     char *result = (char *) malloc(sizeof(char) * 128);
     if (result == NULL) return NULL;
 
     memset(result, 0, 128);
 
     switch (descriptor[0]) {
-        case 'Z': { if ((bool)low) sprintf(result, "(boolean) \"true\"");
-                    else           sprintf(result, "(boolean) \"false\"");  break; }
+        case 'Z': { if ((bool)low) {
+                      if (showtype) sprintf(result, "(boolean) \"true\"");
+                      else          sprintf(result,           "\"true\"");
+                  } else {
+                      if (showtype) sprintf(result, "(boolean) \"false\"");  
+                      else          sprintf(result,           "\"false\"");
+                  } 
+                  break; }
 
-        case 'B': { sprintf(result, "(byte) \"%hhd\"", (s1) low);    break; }
-        case 'S': { sprintf(result, "(short) \"%hd\"", (s2) low);    break; }
-        case 'I': { sprintf(result, "(int) \"%d\"",    (s4) low);    break; }
-        case 'F': { sprintf(result, "(float) \"%f\"",  (float) low); break; }
-
+        case 'B': { if (showtype) sprintf(result, "(byte) \"%hhd\"", (s1) low);
+                    else          sprintf(result,        "\"%hhd\"", (s1) low);
+                    break; }
+        case 'S': { if (showtype) sprintf(result, "(short) \"%hd\"", (s2) low);    
+                    else          sprintf(result,         "\"%hd\"", (s2) low);
+                    break; }
+        case 'I': { if (showtype) sprintf(result, "(int) \"%d\"",    (s4) low);
+                    else          sprintf(result,       "\"%d\"",    (s4) low);
+                    break; }
+        case 'F': { if (showtype) sprintf(result, "(float) \"%f\"",  (float) low);
+                    else          sprintf(result, "(float) \"%f\"",  (float) low);
+                    break; }
         case 'J': { 
                     long long int l;
                     memcpy( ((char *)&l)+0, &low,  sizeof(low)  );
                     memcpy( ((char *)&l)+4, &high, sizeof(high) );
 
-                    sprintf(result, "(long) \"%lld\"", l); 
+                    if (showtype) sprintf(result, "(long) \"%lld\"", l); 
+                    else          sprintf(result,        "\"%lld\"", l); 
                     break; 
                   }
         case 'D': { 
@@ -862,12 +876,14 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     memcpy( ((char *)&d)+0, &low,  sizeof(low)  );
                     memcpy( ((char *)&d)+4, &high, sizeof(high) );
 
-                    sprintf(result, "(double) \"%f\"", d); 
+                    if (showtype) sprintf(result, "(double) \"%f\"", d); 
+                    else          sprintf(result,          "\"%f\"", d); 
                     break; 
                   }
 
-        case 'V': { sprintf(result, "(void)"); break; }
-
+        case 'V': { if (showtype) sprintf(result, "(void)");
+//                  else          sprintf(result, "");
+                    break; }
         case 'C': {
                     /* dvmConvertUtf16ToUtf8() expects a string */
                     u2 str = (u2) low;
@@ -886,7 +902,8 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     }
 
                     /* setup the parameter string */
-                    sprintf(result, "(char) \"%s\"", c);
+                    if (showtype) sprintf(result, "(char) \"%s\"", c);
+                    else          sprintf(result,        "\"%s\"", c);
 
                     /* free the utf8 string */
                     free(c);
@@ -894,11 +911,58 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     break;
                   }
 
-        case '[': /* fall through */
+        case '[': {
+                    ArrayObject *array = (ArrayObject *) low;
+
+                    if (array == NULL) {
+                        sprintf(result, "[null]");
+                        break;
+                    }
+                    
+                    /* convert descriptor string to its usual format */
+                    char *descriptorClass = convertDescriptor(descriptor);
+                   
+                    char **elements = malloc((array->length * sizeof(char *)));
+                    
+                    /* free the temporary result string, as we may need a larger buffer */
+                    free(result);
+                    
+                    /* first round, get the elements and keep track of its total size */
+                    unsigned int len = 0;
+                    unsigned int i;
+                    ssize_t width = dvmArrayClassElementWidth( array->obj.clazz );
+                    for (i = 0; i < array->length; i++) {
+                        /* recursive step, and we expect two 4 byte width values */
+                        ssize_t offset = i * width;
+                        u8 element = *( (u8 *) (((u1 *)array->contents) + offset));
+                        u4 el_low  = (element == 0) ? 0 : (u4)  element;
+                        u4 el_high = (element == 0) ? 0 : (u4)  (element >> 32);
+
+                        elements[i] = parameterToString(self, array->obj.clazz->descriptor+1, 
+                                        el_low,  
+                                        el_high, false); 
+                        len += strlen(elements[i]);
+                    }
+
+                    // allocate enough memory to store the string plus some extras */
+                    result = (char *) malloc(strlen(descriptorClass) + 2 + (sizeof(char) * len) + 32);
+                               
+
+                    // second round, setup the parameter string */
+                    sprintf(result,"(%s) [", descriptorClass);
+                    free(descriptorClass);
+                    for (i = 0; i < array->length; i++) {
+                        strcat(result, elements[i]);
+                        free(elements[i]);
+                        if (i < array->length-1) strcat(result, ",");
+                    } 
+                    strcat(result,"]");
+
+                    break;
+                  }
         case 'L': {
                     /* free the temporary result string, as we may need a larger buffer */
                     free(result);
-
                     /* convert descriptor string to its usual format */
                     char *descriptorClass = convertDescriptor(descriptor);
 
@@ -909,7 +973,8 @@ char *parameterToString(Thread *self, const char *descriptor, u4 low, u4 high) {
                     result = (char *) malloc(sizeof(char) * (strlen(descriptorClass) + strlen(string)) + 32);
 
                     /* setup the parameter string */
-                    sprintf(result, "(%s) \"%s\"", descriptorClass, string);
+                    if (showtype) sprintf(result, "(%s) \"%s\"", descriptorClass, string);
+                    else          sprintf(result,      "\"%s\"",                  string);
 
                     /* free the descriptor string */
                     free(descriptorClass);
@@ -969,7 +1034,7 @@ char **getParameters(Thread *self, const Method *method, int parameterCount, u4 
     int i, j;
     for (i = locals + (dvmIsStaticMethod(method) ? 0 : 1), j = 0; parameterCount > 0; parameterCount--, i++, j++) {
         const char *descriptor = dexParameterIteratorNextDescriptor(&dpi);
-        parameters[j] = parameterToString(self, descriptor, frameptr[i], frameptr[i + 1]);
+        parameters[j] = parameterToString(self, descriptor, frameptr[i], frameptr[i + 1], true);
 
         /* 64 bit fields (longs and doubles) use two registers. make sure we skip the next register */
         if (descriptor[0] == 'J' || descriptor[0] == 'D')
@@ -1070,7 +1135,7 @@ void handle_return(Thread *self, const Method *method, MethodTraceState *state, 
     /* parameterToString() expects two u4 parameters. We will have to split retval in half. */
     u4 low  = (retval == 0) ? 0 : (u4)  *((u8*)retval);
     u4 high = (retval == 0) ? 0 : (u4) (*((u8*)retval) >> 32);
-    char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high);
+    char *returnString = parameterToString(self, dexProtoGetReturnType(&method->prototype), low, high, true);
 
 #if LOGD_TRACE_ENABLED
     LOGD_TRACE("%sreturn %s\n", whitespace, returnString);
